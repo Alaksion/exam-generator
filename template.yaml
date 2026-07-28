@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Mock-exam generator serverless backend
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment.
+  ApiKeyValue:
+    Type: String
+    NoEcho: true
+    Description: Value for the x-api-key header required by all public endpoints.
+    MinLength: 1
+  BedrockModelDefault:
+    Type: String
+    Default: anthropic.claude-3-haiku-20240307-v1:0
+    Description: Default Bedrock model used when a certification does not specify one.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Handler: index.handler
+    MemorySize: 1024
+    Timeout: 30
+    Tracing: Active
+    Environment:
+      Variables:
+        NODE_OPTIONS: --enable-source-maps
+        LOG_LEVEL: INFO
+        POWERTOOLS_SERVICE_NAME: exam-generator
+        BEDROCK_MODEL_DEFAULT: !Ref BedrockModelDefault
+        DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
+        DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
+        SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
+        S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
+    Tags:
+      Project: exam-generator
+      Environment: !Ref Environment
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Public API
+  # ---------------------------------------------------------------------------
+  PublicApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-public-api
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,x-api-key'"
+        AllowOrigin: "'*'"
+        MaxAge: "'600'"
+      Auth:
+        DefaultAuthorizer: ApiKeyAuthorizer
+        Authorizers:
+          ApiKeyAuthorizer:
+            FunctionArn: !GetAtt ApiKeyAuthorizerFunction.Arn
+            FunctionPayloadType: REQUEST
+            Identity:
+              ReauthorizeEvery: 0
+
+  ApiKeyAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/authorizer/index.ts
+        Loader:
+          - .ts=ts
+    Properties:
+      CodeUri: ./
+      Description: Validates the x-api-key header against the configured secret.
+      Environment:
+        Variables:
+          EXPECTED_API_KEY: !Ref ApiKeyValue
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/api/index.ts
+        Loader:
+          - .ts=ts
+    Properties:
+      CodeUri: ./
+      Description: HTTP API handler for certifications and exams.
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId: !Ref PublicApi
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CertificationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamsTable
+        - SQSWriteMessagePolicy:
+            QueueName: !GetAtt GeneratorQueue.QueueName
+        - S3CrudPolicy:
+            BucketName: !Ref ExamArtifactsBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+
+  # ---------------------------------------------------------------------------
+  # Asynchronous exam generator
+  # ---------------------------------------------------------------------------
+  GeneratorFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/generator/index.ts
+        Loader:
+          - .ts=ts
+    Properties:
+      CodeUri: ./
+      Description: SQS worker that generates exam questions, renders the PDF, and uploads artifacts.
+      Timeout: 300
+      MemorySize: 2048
+      Events:
+        SqsEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt GeneratorQueue.Arn
+            BatchSize: 1
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CertificationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamsTable
+        - S3CrudPolicy:
+            BucketName: !Ref ExamArtifactsBucket
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: '*'
+
+  # ---------------------------------------------------------------------------
+  # Data stores
+  # ---------------------------------------------------------------------------
+  CertificationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-certifications
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+        - AttributeName: code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ProviderCodeIndex
+          KeySchema:
+            - AttributeName: provider
+              KeyType: HASH
+            - AttributeName: code
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
+  ExamsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-exams
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: certificationId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusCreatedAtIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: CertificationIdIndex
+          KeySchema:
+            - AttributeName: certificationId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
+  GeneratorQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-generator-queue
+      VisibilityTimeout: 360
+      MessageRetentionPeriod: 1209600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt GeneratorDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
+  GeneratorDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-generator-dlq
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
+  ExamArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-artifacts-${AWS::AccountId}-${AWS::Region}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: STANDARD_IA
+                TransitionInDays: 30
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
+Outputs:
+  ApiUrl:
+    Description: Public API endpoint
+    Value: !Sub https://${PublicApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+  GeneratorQueueUrl:
+    Description: Generator SQS queue URL
+    Value: !Ref GeneratorQueue
+  ExamArtifactsBucketName:
+    Description: S3 bucket for exam artifacts
+    Value: !Ref ExamArtifactsBucket
+  CertificationsTableName:
+    Description: DynamoDB certifications table
+    Value: !Ref CertificationsTable
+  ExamsTableName:
+    Description: DynamoDB exams table
+    Value: !Ref ExamsTable

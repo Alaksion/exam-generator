@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "deployment": {
+    "stack_name": "exam-generator",
+    "region": "us-east-1",
+    "confirm_changeset": true,
+    "capabilities": "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND",
+    "s3_prefix": "exam-generator",
+    "image_repositories": []
+  }
+}
