@@ -6,17 +6,22 @@ export type Provider = z.infer<typeof Provider>;
 export const Difficulty = z.enum(['easy', 'medium', 'hard']);
 export type Difficulty = z.infer<typeof Difficulty>;
 
-export const DifficultyDistribution = z.object({
-  easy: z.number().min(0).max(1),
-  medium: z.number().min(0).max(1),
-  hard: z.number().min(0).max(1),
-});
+export const DifficultyDistribution = z
+  .object({
+    easy: z.number().min(0).max(1),
+    medium: z.number().min(0).max(1),
+    hard: z.number().min(0).max(1),
+  })
+  .refine(
+    (dist) => Math.abs(dist.easy + dist.medium + dist.hard - 1) < 0.0001,
+    () => ({ message: 'Difficulty weights must sum to 1.0' }),
+  );
 
 export const CertificationConfig = z.object({
   questionCount: z.number().int().min(1).max(100),
   difficultyDistribution: DifficultyDistribution,
   domains: z.array(z.string().min(1)).min(1),
-  modelId: z.string().optional(),
+  modelId: z.string().min(1),
   promptTemplate: z.string().min(1),
 });
 
