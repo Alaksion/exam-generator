@@ -89,14 +89,3 @@ export async function updateCertification(
     }),
   );
 }
-
-export function toPublicCertification(certification: Certification): Omit<Certification, 'config'> & {
-  config: Omit<Certification['config'], 'promptTemplate'>;
-} {
-  const { config: certConfig, ...rest } = certification;
-  const { promptTemplate: _promptTemplate, ...publicConfig } = certConfig;
-  return {
-    ...rest,
-    config: publicConfig,
-  };
-}

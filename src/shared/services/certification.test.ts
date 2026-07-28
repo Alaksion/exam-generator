@@ -6,76 +6,43 @@ import {
   getCertificationByProviderCode,
 } from '../repositories/certifications.js';
 import { validateCertification, createCertification, CertificationLookup } from './certification.js';
+import { certification, certificationInput } from '../../test/fixtures/certification.js';
 
 vi.mock('../repositories/certifications.js', () => ({
   createCertification: vi.fn(),
   getCertificationByProviderCode: vi.fn(),
-  toPublicCertification: vi.fn(),
 }));
-
-const validCertification = {
-  id: '11111111-1111-1111-1111-111111111111',
-  provider: 'aws' as const,
-  code: 'CLF-C02',
-  name: 'AWS Certified Cloud Practitioner',
-  version: 'v1',
-  description: 'Entry-level AWS certification.',
-  isActive: true,
-  config: {
-    questionCount: 10,
-    difficultyDistribution: { easy: 0.2, medium: 0.5, hard: 0.3 },
-    domains: ['Cloud Concepts'],
-    modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
-    promptTemplate: 'Generate a {difficulty} question about {domain} for exam {code}.',
-  },
-};
-
-const validInput = {
-  provider: 'aws' as const,
-  code: 'CLF-C02',
-  name: 'AWS Certified Cloud Practitioner',
-  version: 'v1',
-  description: 'Entry-level AWS certification.',
-  isActive: true,
-  config: {
-    questionCount: 10,
-    difficultyDistribution: { easy: 0.2, medium: 0.5, hard: 0.3 },
-    domains: ['Cloud Concepts'],
-    modelId: 'anthropic.claude-3-haiku-20240307-v1:0',
-    promptTemplate: 'Generate a {difficulty} question about {domain} for exam {code}.',
-  },
-};
 
 function makeLookup(exists: boolean): {
   lookup: CertificationLookup;
-  getByProviderCode: ReturnType<typeof vi.fn>;
+  existsByProviderCode: ReturnType<typeof vi.fn>;
 } {
-  const getByProviderCode = vi.fn().mockResolvedValue(exists ? validCertification : null);
-  return { lookup: { getByProviderCode }, getByProviderCode };
+  const existsByProviderCode = vi.fn().mockResolvedValue(exists);
+  return { lookup: { existsByProviderCode }, existsByProviderCode };
 }
 
 describe('validateCertification', () => {
   it('returns a validated certification when all rules pass', async () => {
-    const { lookup, getByProviderCode } = makeLookup(false);
+    const { lookup, existsByProviderCode } = makeLookup(false);
 
-    const result = await validateCertification(validCertification, lookup);
+    const result = await validateCertification(certification, lookup);
 
     expect(result.provider).toBe('aws');
     expect(result.code).toBe('CLF-C02');
-    expect(getByProviderCode).toHaveBeenCalledWith('aws', 'CLF-C02');
+    expect(existsByProviderCode).toHaveBeenCalledWith('aws', 'CLF-C02');
   });
 
   it('throws when provider+code already exists', async () => {
     const { lookup } = makeLookup(true);
 
-    await expect(validateCertification(validCertification, lookup)).rejects.toThrow(ConflictError);
+    await expect(validateCertification(certification, lookup)).rejects.toThrow(ConflictError);
   });
 
   it('throws for an invalid provider', async () => {
     const { lookup } = makeLookup(false);
 
     await expect(
-      validateCertification({ ...validCertification, provider: 'invalid' }, lookup),
+      validateCertification({ ...certification, provider: 'invalid' }, lookup),
     ).rejects.toThrow(z.ZodError);
   });
 
@@ -85,8 +52,8 @@ describe('validateCertification', () => {
     await expect(
       validateCertification(
         {
-          ...validCertification,
-          config: { ...validCertification.config, questionCount: 0 },
+          ...certification,
+          config: { ...certification.config, questionCount: 0 },
         },
         lookup,
       ),
@@ -99,9 +66,9 @@ describe('validateCertification', () => {
     await expect(
       validateCertification(
         {
-          ...validCertification,
+          ...certification,
           config: {
-            ...validCertification.config,
+            ...certification.config,
             difficultyDistribution: { easy: 0.5, medium: 0.5, hard: 0.1 },
           },
         },
@@ -116,8 +83,8 @@ describe('validateCertification', () => {
     await expect(
       validateCertification(
         {
-          ...validCertification,
-          config: { ...validCertification.config, domains: [] },
+          ...certification,
+          config: { ...certification.config, domains: [] },
         },
         lookup,
       ),
@@ -130,8 +97,8 @@ describe('validateCertification', () => {
     await expect(
       validateCertification(
         {
-          ...validCertification,
-          config: { ...validCertification.config, modelId: '' },
+          ...certification,
+          config: { ...certification.config, modelId: '' },
         },
         lookup,
       ),
@@ -144,8 +111,8 @@ describe('validateCertification', () => {
     await expect(
       validateCertification(
         {
-          ...validCertification,
-          config: { ...validCertification.config, promptTemplate: '' },
+          ...certification,
+          config: { ...certification.config, promptTemplate: '' },
         },
         lookup,
       ),
@@ -162,7 +129,7 @@ describe('createCertification', () => {
     vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
     vi.mocked(createCertificationRecord).mockResolvedValue(undefined);
 
-    const result = await createCertification(validInput);
+    const result = await createCertification(certificationInput);
 
     expect(result.provider).toBe('aws');
     expect(result.code).toBe('CLF-C02');
@@ -176,16 +143,18 @@ describe('createCertification', () => {
   });
 
   it('throws ConflictError when provider+code already exists', async () => {
-    vi.mocked(getCertificationByProviderCode).mockResolvedValue(validCertification);
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(certification);
 
-    await expect(createCertification(validInput)).rejects.toThrow(ConflictError);
+    await expect(createCertification(certificationInput)).rejects.toThrow(ConflictError);
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 
   it('throws ZodError for invalid input', async () => {
     vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
 
-    await expect(createCertification({ ...validInput, provider: 'invalid' })).rejects.toThrow(z.ZodError);
+    await expect(createCertification({ ...certificationInput, provider: 'invalid' })).rejects.toThrow(
+      z.ZodError,
+    );
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 });

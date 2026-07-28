@@ -1,8 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
-import { createCertification } from '../shared/services/certification.js';
-import { toPublicCertification } from '../shared/repositories/certifications.js';
+import { createCertification, toPublicCertification } from '../shared/services/certification.js';
 import { isApiError } from '../shared/errors.js';
 
 const router = new Router();
