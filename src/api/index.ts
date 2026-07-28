@@ -2,7 +2,8 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
 import { createCertification, toPublicCertification } from '../shared/services/certification.js';
-import { isApiError } from '../shared/errors.js';
+import { isApiError, NotFoundError } from '../shared/errors.js';
+import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
 
 const router = new Router();
 
@@ -17,11 +18,16 @@ router.register('POST', '/v1/certifications', async (event) => {
 });
 
 router.register('GET', '/v1/certifications', async () => {
-  return jsonResponse(200, { items: [], nextCursor: undefined });
+  const certifications = await listCertifications();
+  return jsonResponse(200, { items: certifications.map(toPublicCertification) });
 });
 
 router.register('GET', '/v1/certifications/{id}', async (_event, params) => {
-  return jsonResponse(200, { id: params.id, provider: 'aws', code: 'CLF-C02', name: 'Stub' });
+  const certification = await getCertificationById(params.id);
+  if (!certification) {
+    throw new NotFoundError('Certification');
+  }
+  return jsonResponse(200, toPublicCertification(certification));
 });
 
 router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
