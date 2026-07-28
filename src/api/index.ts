@@ -1,5 +1,9 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
+import { createCertification } from '../shared/services/certification.js';
+import { toPublicCertification } from '../shared/repositories/certifications.js';
+import { isApiError } from '../shared/errors.js';
 
 const router = new Router();
 
@@ -8,13 +12,9 @@ router.register('GET', '/v1/health', async () => {
 });
 
 router.register('POST', '/v1/certifications', async (event) => {
-  const body = parseBody(event) as Record<string, unknown>;
-  const config = (body.config as Record<string, unknown>) ?? {};
-  return jsonResponse(201, {
-    id: 'cert-uuid',
-    ...body,
-    config: { ...config, promptTemplate: undefined },
-  });
+  const body = parseBody(event);
+  const certification = await createCertification(body);
+  return jsonResponse(201, toPublicCertification(certification));
 });
 
 router.register('GET', '/v1/certifications', async () => {
@@ -58,7 +58,27 @@ router.register('DELETE', '/v1/exams/{id}', async () => {
   return { statusCode: 204, body: '' };
 });
 
+function mapErrorToResponse(error: unknown): APIGatewayProxyResultV2 {
+  if (isApiError(error)) {
+    return jsonResponse(error.statusCode, error.toResponse());
+  }
+
+  if (error instanceof z.ZodError) {
+    const message = error.errors
+      .map((issue) => `${issue.path.length ? issue.path.join('.') : 'request'}: ${issue.message}`)
+      .join('; ');
+    return jsonResponse(400, { error: 'InvalidRequest', message });
+  }
+
+  console.error('Unhandled error', error);
+  return jsonResponse(500, { error: 'InternalError', message: 'An internal error occurred.' });
+}
+
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-  const result = await router.route(event);
-  return result ?? notFound();
+  try {
+    const result = await router.route(event);
+    return result ?? notFound();
+  } catch (error) {
+    return mapErrorToResponse(error);
+  }
 };
