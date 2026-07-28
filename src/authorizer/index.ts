@@ -1,11 +1,11 @@
 import { APIGatewayRequestAuthorizerEvent, APIGatewayAuthorizerResult } from 'aws-lambda';
-
-const expectedKey = process.env.EXPECTED_API_KEY ?? '';
+import { fetchExpectedKey } from './apiKey.js';
 
 export const handler = async (event: APIGatewayRequestAuthorizerEvent): Promise<APIGatewayAuthorizerResult> => {
   const providedKey = event.headers?.['x-api-key'] ?? event.headers?.['X-Api-Key'] ?? '';
+  const expectedKey = await fetchExpectedKey();
 
-  if (!expectedKey || providedKey !== expectedKey) {
+  if (!providedKey || providedKey !== expectedKey) {
     throw new Error('Unauthorized');
   }
 

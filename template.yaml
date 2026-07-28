@@ -78,7 +78,22 @@ Resources:
       Description: Validates the x-api-key header against the configured secret.
       Environment:
         Variables:
-          EXPECTED_API_KEY: !Ref ApiKeyValue
+          API_KEY_PARAMETER_NAME: !Ref ApiKeyParameter
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+              Resource: !GetAtt ApiKeyParameter.Arn
+
+  ApiKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /${AWS::StackName}/api-key
+      Type: String
+      Value: !Ref ApiKeyValue
+      Description: API key used by the x-api-key authorizer.
 
   ApiFunction:
     Type: AWS::Serverless::Function
