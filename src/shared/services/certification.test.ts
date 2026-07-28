@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { z } from 'zod';
+import { ConflictError } from '../errors.js';
 import { validateCertification, CertificationLookup } from './certification.js';
 
 const validCertification = {
@@ -40,9 +42,7 @@ describe('validateCertification', () => {
   it('throws when provider+code already exists', async () => {
     const { lookup } = makeLookup(true);
 
-    await expect(validateCertification(validCertification, lookup)).rejects.toThrow(
-      'Certification (aws, CLF-C02) already exists.',
-    );
+    await expect(validateCertification(validCertification, lookup)).rejects.toThrow(ConflictError);
   });
 
   it('throws for an invalid provider', async () => {
@@ -50,7 +50,7 @@ describe('validateCertification', () => {
 
     await expect(
       validateCertification({ ...validCertification, provider: 'invalid' }, lookup),
-    ).rejects.toThrow();
+    ).rejects.toThrow(z.ZodError);
   });
 
   it('throws when questionCount is not positive', async () => {
@@ -64,7 +64,7 @@ describe('validateCertification', () => {
         },
         lookup,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(z.ZodError);
   });
 
   it('throws when difficulty weights do not sum to 1.0', async () => {
@@ -81,7 +81,7 @@ describe('validateCertification', () => {
         },
         lookup,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/Difficulty weights must sum to 1\.0/);
   });
 
   it('throws when domains are empty', async () => {
@@ -95,7 +95,7 @@ describe('validateCertification', () => {
         },
         lookup,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(z.ZodError);
   });
 
   it('throws when modelId is empty', async () => {
@@ -109,7 +109,7 @@ describe('validateCertification', () => {
         },
         lookup,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(z.ZodError);
   });
 
   it('throws when promptTemplate is empty', async () => {
@@ -123,6 +123,6 @@ describe('validateCertification', () => {
         },
         lookup,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow(z.ZodError);
   });
 });

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const DIFFICULTY_SUM_TOLERANCE = 0.0001;
+
 export const Provider = z.enum(['aws', 'azure', 'gcp']);
 export type Provider = z.infer<typeof Provider>;
 
@@ -13,7 +15,7 @@ export const DifficultyDistribution = z
     hard: z.number().min(0).max(1),
   })
   .refine(
-    (dist) => Math.abs(dist.easy + dist.medium + dist.hard - 1) < 0.0001,
+    (dist) => Math.abs(dist.easy + dist.medium + dist.hard - 1) < DIFFICULTY_SUM_TOLERANCE,
     () => ({ message: 'Difficulty weights must sum to 1.0' }),
   );
 
