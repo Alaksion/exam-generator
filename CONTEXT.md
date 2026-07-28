@@ -6,7 +6,9 @@ A mock-exam generator for IT certifications such as AWS, Azure, and Google Cloud
 The MVP focuses on two core capabilities:
 
 1. Generating practice exams asynchronously from a catalog of certifications.
-2. Listing generated exams and downloading them as PDFs from a static website.
+2. Listing generated exams and exposing PDF downloads via the API.
+
+This repository contains the serverless backend only. The client static application is intentionally out of scope here and lives in a separate repository.
 
 Authentication, pricing, analytics, and failure handling are explicitly out of scope for the MVP.
 

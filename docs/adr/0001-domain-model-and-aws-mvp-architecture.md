@@ -9,8 +9,8 @@ Accepted
 We are building an MVP mock-exam generator for IT certifications. The scope is intentionally narrow:
 
 - Generate practice exams asynchronously for a catalog of certifications.
-- List generated exams and download them as PDFs from a static website.
-- AWS will host the application as part of a hands-on study session.
+- List generated exams and expose PDF downloads via presigned API endpoints.
+- AWS will host the serverless backend as part of a hands-on study session.
 
 Authentication, pricing, analytics, and detailed failure handling are out of scope.
 
@@ -67,9 +67,9 @@ This avoids a multi-stage state machine and keeps the "exam is ready" notificati
 
 There is no user authentication. All exams and certifications are public. Abuse is mitigated by API Gateway throttling, WAF rate limiting, and a hardcoded `x-api-key` UUID passed from API Gateway to the Lambda layer.
 
-### 9. Separate origins for static site and API
+### 9. API-only origin with CORS for cross-origin clients
 
-The static website and the API live on separate origins, e.g. `app.example.com` and `api.example.com`. This makes future evolution easier (mobile clients, separate deployments, API versioning) at the cost of configuring CORS from the start.
+The API lives on its own origin, e.g. `api.example.com`. CORS is configured at API Gateway so future web or mobile clients hosted elsewhere can consume it. This keeps the serverless backend decoupled from any client deployment and supports separate release cadences.
 
 ### 10. Path-based API versioning
 
