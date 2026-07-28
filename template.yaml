@@ -19,7 +19,7 @@ Parameters:
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs22.x
     Handler: index.handler
     MemorySize: 1024
     Timeout: 30
@@ -107,7 +107,7 @@ Resources:
             TableName: !Ref CertificationsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamsTable
-        - SQSWriteMessagePolicy:
+        - SQSSendMessagePolicy:
             QueueName: !GetAtt GeneratorQueue.QueueName
         - S3CrudPolicy:
             BucketName: !Ref ExamArtifactsBucket

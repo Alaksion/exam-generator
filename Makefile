@@ -1,3 +1,6 @@
+export PATH := $(CURDIR)/node_modules/.bin:$(PATH)
+SHELL := /bin/bash
+
 .PHONY: install build start test lint format deploy deploy-ci clean
 
 install:
