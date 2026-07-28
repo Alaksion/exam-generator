@@ -3,6 +3,10 @@ import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../sha
 
 const router = new Router();
 
+router.register('GET', '/v1/health', async () => {
+  return jsonResponse(200, { status: 'ok' });
+});
+
 router.register('POST', '/v1/certifications', async (event) => {
   const body = parseBody(event) as Record<string, unknown>;
   const config = (body.config as Record<string, unknown>) ?? {};
