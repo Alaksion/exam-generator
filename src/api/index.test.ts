@@ -4,16 +4,26 @@ import { handler } from './index.js';
 import {
   createCertification as createCertificationRecord,
   getCertificationByProviderCode,
+  listCertifications,
+  getCertificationById,
 } from '../shared/repositories/certifications.js';
 import { certification, certificationInput } from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
   createCertification: vi.fn(),
   getCertificationByProviderCode: vi.fn(),
+  listCertifications: vi.fn(),
+  getCertificationById: vi.fn(),
 }));
 
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
+const mockedListCertifications = vi.mocked(listCertifications);
+const mockedGetById = vi.mocked(getCertificationById);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function makeEvent(method: string, path: string, body?: unknown): APIGatewayProxyEventV2 {
   return {
@@ -50,10 +60,6 @@ describe('health endpoint', () => {
 });
 
 describe('POST /v1/certifications', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('returns 201 Created with the public certification', async () => {
     mockedGetByProviderCode.mockResolvedValue(null);
     mockedCreateRecord.mockResolvedValue(undefined);
@@ -97,5 +103,45 @@ describe('POST /v1/certifications', () => {
 
     expect(result.statusCode).toBe(409);
     expect(body.error).toBe('Conflict');
+  });
+});
+
+describe('GET /v1/certifications', () => {
+  it('returns active certifications without promptTemplate', async () => {
+    mockedListCertifications.mockResolvedValue([certification]);
+
+    const result = (await handler(makeEvent('GET', '/v1/certifications'))) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { items: Array<{ config: object }> };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].config).not.toHaveProperty('promptTemplate');
+  });
+});
+
+describe('GET /v1/certifications/{id}', () => {
+  it('returns the certification without promptTemplate', async () => {
+    mockedGetById.mockResolvedValue(certification);
+
+    const result = (await handler(
+      makeEvent('GET', '/v1/certifications/11111111-1111-1111-1111-111111111111'),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { id: string; config: object };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.id).toBe('11111111-1111-1111-1111-111111111111');
+    expect(body.config).not.toHaveProperty('promptTemplate');
+  });
+
+  it('returns 404 Not Found for unknown id', async () => {
+    mockedGetById.mockResolvedValue(null);
+
+    const result = (await handler(
+      makeEvent('GET', '/v1/certifications/unknown-id'),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
   });
 });
