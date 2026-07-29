@@ -10,6 +10,7 @@ import {
 
 const CreateCertificationRequest = Certification.omit({ id: true });
 const UpdateCertificationRequest = Certification.omit({ id: true, provider: true, code: true });
+const IMMUTABLE_FIELDS = ['provider', 'code'] as const;
 
 export interface CertificationLookup {
   existsByProviderCode(provider: string, code: string): Promise<boolean>;
@@ -44,9 +45,12 @@ export async function createCertification(data: unknown): Promise<Certification>
 }
 
 export async function updateCertificationById(id: string, data: unknown): Promise<Certification> {
-  const body = (data ?? {}) as Record<string, unknown>;
-  if ('provider' in body || 'code' in body) {
-    throw new InvalidRequestError('provider and code are immutable.');
+  const body =
+    data !== null && typeof data === 'object'
+      ? (data as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+  if (IMMUTABLE_FIELDS.some((field) => field in body)) {
+    throw new InvalidRequestError(`${IMMUTABLE_FIELDS.join(' and ')} are immutable.`);
   }
 
   const updates = UpdateCertificationRequest.parse(data);

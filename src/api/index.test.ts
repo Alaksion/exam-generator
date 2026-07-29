@@ -8,7 +8,7 @@ import {
   getCertificationById,
   updateCertification as updateCertificationRecord,
 } from '../shared/repositories/certifications.js';
-import { certification, certificationInput } from '../test/fixtures/certification.js';
+import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
   createCertification: vi.fn(),
@@ -23,14 +23,6 @@ const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
 const mockedGetById = vi.mocked(getCertificationById);
 const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
-
-const updateInput = {
-  name: 'Updated AWS Certified Cloud Practitioner',
-  description: 'Updated description.',
-  version: 'v2',
-  isActive: false,
-  config: certificationInput.config,
-};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -163,7 +155,7 @@ describe('PUT /v1/certifications/{id}', () => {
     mockedUpdateRecord.mockResolvedValue(undefined);
 
     const result = (await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', updateInput),
+      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', certificationUpdate),
     )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { id: string; provider: string; config: object };
 
@@ -176,7 +168,7 @@ describe('PUT /v1/certifications/{id}', () => {
   it('returns 400 Bad Request when provider or code is included', async () => {
     const result = (await handler(
       makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
-        ...updateInput,
+        ...certificationUpdate,
         provider: 'azure',
       }),
     )) as APIGatewayProxyStructuredResultV2;
@@ -190,7 +182,7 @@ describe('PUT /v1/certifications/{id}', () => {
     mockedGetById.mockResolvedValue(null);
 
     const result = (await handler(
-      makeEvent('PUT', '/v1/certifications/unknown-id', updateInput),
+      makeEvent('PUT', '/v1/certifications/unknown-id', certificationUpdate),
     )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -203,8 +195,8 @@ describe('PUT /v1/certifications/{id}', () => {
 
     const result = (await handler(
       makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
-        ...updateInput,
-        config: { ...updateInput.config, questionCount: 0 },
+        ...certificationUpdate,
+        config: { ...certificationUpdate.config, questionCount: 0 },
       }),
     )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { error: string };

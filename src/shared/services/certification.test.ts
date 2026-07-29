@@ -13,7 +13,7 @@ import {
   updateCertificationById,
   CertificationLookup,
 } from './certification.js';
-import { certification, certificationInput } from '../../test/fixtures/certification.js';
+import { certification, certificationInput, certificationUpdate } from '../../test/fixtures/certification.js';
 
 vi.mock('../repositories/certifications.js', () => ({
   createCertification: vi.fn(),
@@ -24,14 +24,6 @@ vi.mock('../repositories/certifications.js', () => ({
 
 const mockedGetById = vi.mocked(getCertificationById);
 const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
-
-const updateInput = {
-  name: 'Updated AWS Certified Cloud Practitioner',
-  description: 'Updated description.',
-  version: 'v2',
-  isActive: false,
-  config: certificationInput.config,
-};
 
 function makeLookup(exists: boolean): {
   lookup: CertificationLookup;
@@ -188,26 +180,26 @@ describe('updateCertificationById', () => {
     mockedGetById.mockResolvedValue(certification);
     mockedUpdateRecord.mockResolvedValue(undefined);
 
-    const result = await updateCertificationById(certification.id, updateInput);
+    const result = await updateCertificationById(certification.id, certificationUpdate);
 
     expect(result.id).toBe(certification.id);
     expect(result.provider).toBe('aws');
     expect(result.code).toBe('CLF-C02');
-    expect(result.name).toBe(updateInput.name);
-    expect(result.isActive).toBe(updateInput.isActive);
-    expect(mockedUpdateRecord).toHaveBeenCalledWith(certification.id, updateInput);
+    expect(result.name).toBe(certificationUpdate.name);
+    expect(result.isActive).toBe(certificationUpdate.isActive);
+    expect(mockedUpdateRecord).toHaveBeenCalledWith(certification.id, certificationUpdate);
   });
 
   it('throws InvalidRequestError when provider is in the body', async () => {
     await expect(
-      updateCertificationById(certification.id, { ...updateInput, provider: 'azure' }),
+      updateCertificationById(certification.id, { ...certificationUpdate, provider: 'azure' }),
     ).rejects.toThrow(InvalidRequestError);
     expect(mockedUpdateRecord).not.toHaveBeenCalled();
   });
 
   it('throws InvalidRequestError when code is in the body', async () => {
     await expect(
-      updateCertificationById(certification.id, { ...updateInput, code: 'SAA-C03' }),
+      updateCertificationById(certification.id, { ...certificationUpdate, code: 'SAA-C03' }),
     ).rejects.toThrow(InvalidRequestError);
     expect(mockedUpdateRecord).not.toHaveBeenCalled();
   });
@@ -215,7 +207,7 @@ describe('updateCertificationById', () => {
   it('throws NotFoundError when id does not exist', async () => {
     mockedGetById.mockResolvedValue(null);
 
-    await expect(updateCertificationById(certification.id, updateInput)).rejects.toThrow(NotFoundError);
+    await expect(updateCertificationById(certification.id, certificationUpdate)).rejects.toThrow(NotFoundError);
     expect(mockedUpdateRecord).not.toHaveBeenCalled();
   });
 
@@ -223,7 +215,7 @@ describe('updateCertificationById', () => {
     mockedGetById.mockResolvedValue(certification);
 
     await expect(
-      updateCertificationById(certification.id, { ...updateInput, config: { ...updateInput.config, questionCount: 0 } }),
+      updateCertificationById(certification.id, { ...certificationUpdate, config: { ...certificationUpdate.config, questionCount: 0 } }),
     ).rejects.toThrow(z.ZodError);
   });
 });
