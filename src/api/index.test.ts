@@ -6,6 +6,7 @@ import {
   getCertificationByProviderCode,
   listCertifications,
   getCertificationById,
+  updateCertification as updateCertificationRecord,
 } from '../shared/repositories/certifications.js';
 import { certification, certificationInput } from '../test/fixtures/certification.js';
 
@@ -14,12 +15,22 @@ vi.mock('../shared/repositories/certifications.js', () => ({
   getCertificationByProviderCode: vi.fn(),
   listCertifications: vi.fn(),
   getCertificationById: vi.fn(),
+  updateCertification: vi.fn(),
 }));
 
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
 const mockedGetById = vi.mocked(getCertificationById);
+const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
+
+const updateInput = {
+  name: 'Updated AWS Certified Cloud Practitioner',
+  description: 'Updated description.',
+  version: 'v2',
+  isActive: false,
+  config: certificationInput.config,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -143,5 +154,62 @@ describe('GET /v1/certifications/{id}', () => {
 
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
+  });
+});
+
+describe('PUT /v1/certifications/{id}', () => {
+  it('returns 200 OK with the updated public certification', async () => {
+    mockedGetById.mockResolvedValue(certification);
+    mockedUpdateRecord.mockResolvedValue(undefined);
+
+    const result = (await handler(
+      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', updateInput),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { id: string; provider: string; config: object };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.id).toBe('11111111-1111-1111-1111-111111111111');
+    expect(body.provider).toBe('aws');
+    expect(body.config).not.toHaveProperty('promptTemplate');
+  });
+
+  it('returns 400 Bad Request when provider or code is included', async () => {
+    const result = (await handler(
+      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+        ...updateInput,
+        provider: 'azure',
+      }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+  });
+
+  it('returns 404 Not Found for unknown id', async () => {
+    mockedGetById.mockResolvedValue(null);
+
+    const result = (await handler(
+      makeEvent('PUT', '/v1/certifications/unknown-id', updateInput),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+
+  it('returns 400 Bad Request for invalid config', async () => {
+    mockedGetById.mockResolvedValue(certification);
+
+    const result = (await handler(
+      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+        ...updateInput,
+        config: { ...updateInput.config, questionCount: 0 },
+      }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
   });
 });
