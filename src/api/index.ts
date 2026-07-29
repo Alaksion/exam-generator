@@ -2,8 +2,9 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
 import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
-import { isApiError, NotFoundError } from '../shared/errors.js';
+import { isApiError, NotFoundError, InvalidRequestError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
+import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 
 const router = new Router();
 
@@ -38,11 +39,13 @@ router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
 
 router.register('POST', '/v1/exams', async (event) => {
   const body = parseBody(event) as Record<string, unknown>;
-  return jsonResponse(202, {
-    id: 'exam-uuid',
-    certificationId: body.certificationId as string,
-    status: 'GENERATING',
-  });
+  const certificationId = body.certificationId as string | undefined;
+  if (!certificationId) {
+    throw new InvalidRequestError('certificationId is required.');
+  }
+
+  const exam = await requestExamGeneration(certificationId);
+  return jsonResponse(201, toCreatedExamResponse(exam));
 });
 
 router.register('GET', '/v1/exams', async (event) => {
