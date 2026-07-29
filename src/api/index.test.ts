@@ -21,6 +21,10 @@ const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
 const mockedGetById = vi.mocked(getCertificationById);
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 function makeEvent(method: string, path: string, body?: unknown): APIGatewayProxyEventV2 {
   return {
     version: '2.0',
@@ -56,10 +60,6 @@ describe('health endpoint', () => {
 });
 
 describe('POST /v1/certifications', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('returns 201 Created with the public certification', async () => {
     mockedGetByProviderCode.mockResolvedValue(null);
     mockedCreateRecord.mockResolvedValue(undefined);
@@ -107,10 +107,6 @@ describe('POST /v1/certifications', () => {
 });
 
 describe('GET /v1/certifications', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('returns active certifications without promptTemplate', async () => {
     mockedListCertifications.mockResolvedValue([certification]);
 
@@ -124,10 +120,6 @@ describe('GET /v1/certifications', () => {
 });
 
 describe('GET /v1/certifications/{id}', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('returns the certification without promptTemplate', async () => {
     mockedGetById.mockResolvedValue(certification);
 
