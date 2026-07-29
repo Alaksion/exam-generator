@@ -3,6 +3,7 @@ import { SQSEvent } from 'aws-lambda';
 import { handler, buildArtifactKeys, STUB_SCHEMA_VERSION, STUB_PDF_CONTENT } from './index.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
+import { generateExamQuestions } from '../shared/services/bedrock.js';
 import { certification } from '../test/fixtures/certification.js';
 import { Exam } from '../shared/types.js';
 
@@ -20,9 +21,14 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: vi.fn((input: unknown) => input),
 }));
 
+vi.mock('../shared/services/bedrock.js', () => ({
+  generateExamQuestions: vi.fn(),
+}));
+
 const mockedGetExam = vi.mocked(getExamById);
 const mockedUpdateExam = vi.mocked(updateExamStatus);
 const mockedGetCert = vi.mocked(getCertificationById);
+const mockedGenerateExamQuestions = vi.mocked(generateExamQuestions);
 
 const examId = '22222222-2222-2222-2222-222222222222';
 const correlationId = '33333333-3333-3333-3333-333333333333';
@@ -72,8 +78,11 @@ describe('generator handler', () => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(generatingExam);
     mockedGetCert.mockResolvedValue(certification);
+    mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedGenerateExamQuestions).toHaveBeenCalledWith(generatingExam, certification, correlationId);
 
     expect(mockedUpdateExam).toHaveBeenCalledWith(
       examId,
@@ -88,7 +97,14 @@ describe('generator handler', () => {
     expect(finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     const mockedCommand = vi.mocked(PutObjectCommand);
-    expect(mockedCommand).toHaveBeenCalledTimes(2);
+    expect(mockedCommand).toHaveBeenCalledTimes(3);
+
+    const rawCall = mockedCommand.mock.calls.find(
+      (call) => (call[0] as { Key: string }).Key === keys.s3KeyRaw,
+    );
+    expect(rawCall).toBeDefined();
+    const rawBody = JSON.parse((rawCall![0] as { Body: string }).Body) as string[];
+    expect(rawBody).toEqual(['raw question']);
 
     const jsonCall = mockedCommand.mock.calls.find(
       (call) => (call[0] as { Key: string }).Key === keys.s3KeyJson,
