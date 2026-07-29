@@ -1,9 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Certification, Exam, ExamStatus } from '../types.js';
-import { InvalidRequestError } from '../errors.js';
+import { ConflictError } from '../errors.js';
 
-export function generateExamTitle(certificationName: string, timestamp: Date): string {
-  return `${certificationName} - Practice Exam ${timestamp.toISOString()}`;
+export function generateExamTitle(certification: Certification, timestamp: Date): string {
+  return `${certification.name} - Practice Exam ${timestamp.toISOString()}`;
 }
 
 export function createExam(certification: Certification, now = new Date()): Exam {
@@ -11,10 +11,12 @@ export function createExam(certification: Certification, now = new Date()): Exam
     id: uuidv4(),
     certificationId: certification.id,
     provider: certification.provider,
-    title: generateExamTitle(certification.name, now),
+    title: generateExamTitle(certification, now),
     status: 'GENERATING',
     createdAt: now.toISOString(),
     finishedAt: null,
+    s3KeyJson: undefined,
+    s3KeyPdf: undefined,
   };
 }
 
@@ -24,7 +26,7 @@ export function transitionExamStatus(
   now = new Date(),
 ): Exam {
   if (exam.status !== 'GENERATING') {
-    throw new InvalidRequestError(`Cannot transition exam from ${exam.status} to ${newStatus}.`);
+    throw new ConflictError(`Cannot transition exam from ${exam.status} to ${newStatus}.`);
   }
 
   return {

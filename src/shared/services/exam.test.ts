@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InvalidRequestError } from '../errors.js';
+import { ConflictError } from '../errors.js';
 import { createExam, generateExamTitle, transitionExamStatus } from './exam.js';
 import { certification } from '../../test/fixtures/certification.js';
 
@@ -7,7 +7,7 @@ describe('generateExamTitle', () => {
   it('formats the title with the certification name and ISO timestamp', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
 
-    const title = generateExamTitle('AWS Certified Cloud Practitioner', now);
+    const title = generateExamTitle(certification, now);
 
     expect(title).toBe('AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z');
   });
@@ -24,8 +24,10 @@ describe('createExam', () => {
     expect(exam.status).toBe('GENERATING');
     expect(exam.finishedAt).toBeNull();
     expect(exam.createdAt).toBe(now.toISOString());
-    expect(exam.title).toBe(generateExamTitle(certification.name, now));
+    expect(exam.title).toBe(generateExamTitle(certification, now));
     expect(exam.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    expect(exam.s3KeyJson).toBeUndefined();
+    expect(exam.s3KeyPdf).toBeUndefined();
   });
 });
 
@@ -55,6 +57,6 @@ describe('transitionExamStatus', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
     const ready = transitionExamStatus(createExam(certification, now), 'READY', now);
 
-    expect(() => transitionExamStatus(ready, 'FAILED', now)).toThrow(InvalidRequestError);
+    expect(() => transitionExamStatus(ready, 'FAILED', now)).toThrow(ConflictError);
   });
 });
