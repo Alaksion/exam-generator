@@ -4,6 +4,7 @@ import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../sha
 import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
 import { isApiError, NotFoundError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
+import { requestExamGeneration, toCreatedExamResponse, RequestExamGeneration } from '../shared/services/examGeneration.js';
 
 const router = new Router();
 
@@ -37,12 +38,9 @@ router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
 });
 
 router.register('POST', '/v1/exams', async (event) => {
-  const body = parseBody(event) as Record<string, unknown>;
-  return jsonResponse(202, {
-    id: 'exam-uuid',
-    certificationId: body.certificationId as string,
-    status: 'GENERATING',
-  });
+  const body = RequestExamGeneration.parse(parseBody(event));
+  const exam = await requestExamGeneration(body.certificationId);
+  return jsonResponse(201, toCreatedExamResponse(exam));
 });
 
 router.register('GET', '/v1/exams', async (event) => {

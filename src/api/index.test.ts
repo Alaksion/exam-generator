@@ -8,6 +8,8 @@ import {
   getCertificationById,
   updateCertification as updateCertificationRecord,
 } from '../shared/repositories/certifications.js';
+import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
+import { NotFoundError } from '../shared/errors.js';
 import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
@@ -18,11 +20,22 @@ vi.mock('../shared/repositories/certifications.js', () => ({
   updateCertification: vi.fn(),
 }));
 
+vi.mock('../shared/services/examGeneration.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/services/examGeneration.js')>();
+  return {
+    ...actual,
+    requestExamGeneration: vi.fn(),
+    toCreatedExamResponse: vi.fn(),
+  };
+});
+
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
 const mockedGetById = vi.mocked(getCertificationById);
 const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
+const mockedRequestExamGeneration = vi.mocked(requestExamGeneration);
+const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -203,5 +216,69 @@ describe('PUT /v1/certifications/{id}', () => {
 
     expect(result.statusCode).toBe(400);
     expect(body.error).toBe('InvalidRequest');
+  });
+});
+
+describe('POST /v1/exams', () => {
+  const examResponse = {
+    id: '22222222-2222-2222-2222-222222222222',
+    status: 'GENERATING' as const,
+  };
+
+  it('returns 201 Created and requests exam generation', async () => {
+    mockedRequestExamGeneration.mockResolvedValue({
+      ...examResponse,
+      certificationId: certification.id,
+      provider: certification.provider,
+      title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
+      createdAt: '2026-07-28T12:00:00.000Z',
+      finishedAt: null,
+      s3KeyJson: undefined,
+      s3KeyPdf: undefined,
+    } as unknown as Parameters<typeof toCreatedExamResponse>[0]);
+    mockedToCreatedExamResponse.mockReturnValue(examResponse);
+
+    const result = (await handler(
+      makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as typeof examResponse;
+
+    expect(result.statusCode).toBe(201);
+    expect(body).toEqual(examResponse);
+    expect(mockedRequestExamGeneration).toHaveBeenCalledWith(certification.id);
+  });
+
+  it('returns 400 Bad Request when certificationId is missing', async () => {
+    const result = (await handler(
+      makeEvent('POST', '/v1/exams', {}),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedRequestExamGeneration).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 Bad Request when certificationId is not a valid UUID', async () => {
+    const result = (await handler(
+      makeEvent('POST', '/v1/exams', { certificationId: 'not-a-uuid' }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedRequestExamGeneration).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found when certification is unknown or inactive', async () => {
+    mockedRequestExamGeneration.mockRejectedValue(new NotFoundError('Certification'));
+
+    const result = (await handler(
+      makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
   });
 });
