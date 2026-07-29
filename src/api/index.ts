@@ -2,9 +2,12 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
 import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
-import { isApiError, NotFoundError } from '../shared/errors.js';
+import { isApiError, NotFoundError, ExamNotReadyError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
+import { getExamById } from '../shared/repositories/exams.js';
+import { getCanonicalExam } from '../shared/repositories/artifacts.js';
 import { requestExamGeneration, toCreatedExamResponse, RequestExamGeneration } from '../shared/services/examGeneration.js';
+import { Exam } from '../shared/types.js';
 
 const router = new Router();
 
@@ -50,12 +53,34 @@ router.register('GET', '/v1/exams', async (event) => {
   });
 });
 
+async function loadExamOrThrow(id: string): Promise<Exam> {
+  const exam = await getExamById(id);
+  if (!exam) {
+    throw new NotFoundError('Exam');
+  }
+  return exam;
+}
+
 router.register('GET', '/v1/exams/{id}', async (_event, params) => {
-  return jsonResponse(200, { id: params.id, status: 'READY', title: 'Stub Exam' });
+  const exam = await loadExamOrThrow(params.id);
+  if (exam.status !== 'READY') {
+    throw new ExamNotReadyError();
+  }
+  if (!exam.s3KeyJson) {
+    throw new ExamNotReadyError();
+  }
+  const fullExam = await getCanonicalExam(exam.s3KeyJson);
+  return jsonResponse(200, fullExam);
 });
 
 router.register('GET', '/v1/exams/{id}/status', async (_event, params) => {
-  return jsonResponse(200, { id: params.id, status: 'READY' });
+  const exam = await loadExamOrThrow(params.id);
+  return jsonResponse(200, {
+    id: exam.id,
+    status: exam.status,
+    createdAt: exam.createdAt,
+    finishedAt: exam.finishedAt,
+  });
 });
 
 router.register('DELETE', '/v1/exams/{id}', async () => {

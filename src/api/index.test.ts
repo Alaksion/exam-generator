@@ -10,6 +10,8 @@ import {
 } from '../shared/repositories/certifications.js';
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 import { NotFoundError } from '../shared/errors.js';
+import { getExamById } from '../shared/repositories/exams.js';
+import { getCanonicalExam } from '../shared/repositories/artifacts.js';
 import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
@@ -29,6 +31,14 @@ vi.mock('../shared/services/examGeneration.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../shared/repositories/exams.js', () => ({
+  getExamById: vi.fn(),
+}));
+
+vi.mock('../shared/repositories/artifacts.js', () => ({
+  getCanonicalExam: vi.fn(),
+}));
+
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
@@ -36,6 +46,8 @@ const mockedGetById = vi.mocked(getCertificationById);
 const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
 const mockedRequestExamGeneration = vi.mocked(requestExamGeneration);
 const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
+const mockedGetExamById = vi.mocked(getExamById);
+const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -275,6 +287,112 @@ describe('POST /v1/exams', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+});
+
+const examId = '22222222-2222-2222-2222-222222222222';
+
+const readyExam = {
+  id: examId,
+  certificationId: certification.id,
+  provider: 'aws' as const,
+  title: 'AWS Certified Cloud Practitioner - Practice Exam',
+  status: 'READY' as const,
+  createdAt: '2026-07-28T12:00:00.000Z',
+  finishedAt: '2026-07-28T12:00:01.000Z',
+  s3KeyJson: `exams/${examId}/exam.json`,
+  s3KeyPdf: `exams/${examId}/exam.pdf`,
+};
+
+const generatingExam = {
+  ...readyExam,
+  status: 'GENERATING' as const,
+  finishedAt: null,
+  s3KeyJson: undefined,
+  s3KeyPdf: undefined,
+};
+
+const fullExam = {
+  ...readyExam,
+  schemaVersion: '1.0.0',
+  questions: [],
+};
+
+describe('GET /v1/exams/{id}/status', () => {
+  it('returns the status payload for a ready exam', async () => {
+    mockedGetExamById.mockResolvedValue(readyExam);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}/status`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      status: string;
+      createdAt: string;
+      finishedAt: string;
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.id).toBe(examId);
+    expect(body.status).toBe('READY');
+    expect(body.createdAt).toBe(readyExam.createdAt);
+    expect(body.finishedAt).toBe(readyExam.finishedAt);
+    expect(mockedGetCanonicalExam).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an unknown exam', async () => {
+    mockedGetExamById.mockResolvedValue(null);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}/status`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+});
+
+describe('GET /v1/exams/{id}', () => {
+  it('returns the full canonical JSON when the exam is READY', async () => {
+    mockedGetExamById.mockResolvedValue(readyExam);
+    mockedGetCanonicalExam.mockResolvedValue(fullExam);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { schemaVersion: string; status: string; id: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.schemaVersion).toBe('1.0.0');
+    expect(body.status).toBe('READY');
+    expect(body.id).toBe(examId);
+    expect(mockedGetCanonicalExam).toHaveBeenCalledWith(readyExam.s3KeyJson);
+  });
+
+  it('returns 409 ExamNotReady while the exam is GENERATING', async () => {
+    mockedGetExamById.mockResolvedValue(generatingExam);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(409);
+    expect(body.error).toBe('ExamNotReady');
+    expect(mockedGetCanonicalExam).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an unknown exam', async () => {
+    mockedGetExamById.mockResolvedValue(null);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}`),
     )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
