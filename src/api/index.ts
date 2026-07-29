@@ -1,7 +1,7 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
-import { createCertification, toPublicCertification } from '../shared/services/certification.js';
+import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
 import { isApiError, NotFoundError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
 
@@ -31,8 +31,9 @@ router.register('GET', '/v1/certifications/{id}', async (_event, params) => {
 });
 
 router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
-  const body = parseBody(event) as Record<string, unknown>;
-  return jsonResponse(200, { id: params.id, ...body });
+  const body = parseBody(event);
+  const certification = await updateCertificationById(params.id, body);
+  return jsonResponse(200, toPublicCertification(certification));
 });
 
 router.register('POST', '/v1/exams', async (event) => {

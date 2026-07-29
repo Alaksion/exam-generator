@@ -20,3 +20,11 @@ export const certification: Certification = {
   id: '11111111-1111-1111-1111-111111111111',
   ...certificationInput,
 };
+
+export const certificationUpdate = {
+  name: 'Updated AWS Certified Cloud Practitioner',
+  description: 'Updated description.',
+  version: 'v2',
+  isActive: false,
+  config: certificationInput.config,
+};
