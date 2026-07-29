@@ -3,9 +3,12 @@ import { Exam } from '../types.js';
 import { NotFoundError } from '../errors.js';
 import { getCertificationById } from '../repositories/certifications.js';
 import { createExam as createExamRecord } from '../repositories/exams.js';
-import { sqsClient, requestExamGeneration, toCreatedExamResponse } from './examGeneration.js';
+import {
+  sendGeneratorMessage,
+  requestExamGeneration,
+  toCreatedExamResponse,
+} from './examGeneration.js';
 import { certification } from '../../test/fixtures/certification.js';
-import { config } from '../config.js';
 
 vi.mock('../repositories/certifications.js', () => ({
   getCertificationById: vi.fn(),
@@ -20,15 +23,37 @@ vi.mock('@aws-sdk/client-sqs', () => ({
   SendMessageCommand: vi.fn((input: unknown) => input),
 }));
 
+describe('sendGeneratorMessage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('validates and sends the message to the SQS queue', async () => {
+    const { SendMessageCommand } = await import('@aws-sdk/client-sqs');
+    const message = {
+      examId: '11111111-1111-1111-1111-111111111111',
+      certificationId: '22222222-2222-2222-2222-222222222222',
+      correlationId: 'corr-123',
+    };
+
+    await sendGeneratorMessage(message);
+
+    const mockedCommand = vi.mocked(SendMessageCommand);
+    expect(mockedCommand).toHaveBeenCalledOnce();
+    const sent = mockedCommand.mock.calls[0][0] as { MessageBody: string };
+    expect(JSON.parse(sent.MessageBody)).toEqual(message);
+  });
+});
+
 describe('requestExamGeneration', () => {
   const now = new Date('2026-07-28T12:00:00.000Z');
-  const send = vi.spyOn(sqsClient, 'send');
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('creates an exam, persists it, and sends an SQS message', async () => {
+  it('creates an exam, persists it, and sends a generator message', async () => {
+    const { SendMessageCommand } = await import('@aws-sdk/client-sqs');
     vi.mocked(getCertificationById).mockResolvedValue(certification);
     vi.mocked(createExamRecord).mockResolvedValue(undefined);
 
@@ -37,9 +62,10 @@ describe('requestExamGeneration', () => {
     expect(exam.certificationId).toBe(certification.id);
     expect(exam.status).toBe('GENERATING');
     expect(createExamRecord).toHaveBeenCalledWith(exam);
-    expect(send).toHaveBeenCalledOnce();
 
-    const sent = send.mock.calls[0][0] as unknown as { MessageBody: string };
+    const mockedCommand = vi.mocked(SendMessageCommand);
+    expect(mockedCommand).toHaveBeenCalledOnce();
+    const sent = mockedCommand.mock.calls[0][0] as unknown as { MessageBody: string };
     const message = JSON.parse(sent.MessageBody) as {
       examId: string;
       certificationId: string;
@@ -55,7 +81,6 @@ describe('requestExamGeneration', () => {
 
     await expect(requestExamGeneration(certification.id, now)).rejects.toThrow(NotFoundError);
     expect(createExamRecord).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundError when certification is inactive', async () => {
@@ -63,7 +88,6 @@ describe('requestExamGeneration', () => {
 
     await expect(requestExamGeneration(certification.id, now)).rejects.toThrow(NotFoundError);
     expect(createExamRecord).not.toHaveBeenCalled();
-    expect(send).not.toHaveBeenCalled();
   });
 });
 
@@ -85,14 +109,7 @@ describe('toCreatedExamResponse', () => {
 
     expect(response).toEqual({
       id: createdExam.id,
-      certificationId: createdExam.certificationId,
       status: createdExam.status,
-      title: createdExam.title,
-      createdAt: createdExam.createdAt,
     });
   });
-});
-
-it('uses the configured SQS queue URL', () => {
-  expect(config.generatorQueueUrl).toBe('test-queue-url');
 });

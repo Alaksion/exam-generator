@@ -1,30 +1,40 @@
 import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { v4 as uuidv4 } from 'uuid';
-import { Exam, ExamStatus } from '../types.js';
+import { z } from 'zod';
+import { Exam, ExamStatus, GeneratorMessage } from '../types.js';
 import { config } from '../config.js';
 import { NotFoundError } from '../errors.js';
 import { getCertificationById } from '../repositories/certifications.js';
 import { createExam as createExamRecord } from '../repositories/exams.js';
 import { createExam } from './exam.js';
 
-export const sqsClient = new SQSClient({});
+const sqsClient = new SQSClient({});
+
+export const RequestExamGeneration = z.object({
+  certificationId: z.string().uuid(),
+});
+export type RequestExamGeneration = z.infer<typeof RequestExamGeneration>;
 
 export interface CreatedExamResponse {
   id: string;
-  certificationId: string;
   status: ExamStatus;
-  title: string;
-  createdAt: string;
 }
 
 export function toCreatedExamResponse(exam: Exam): CreatedExamResponse {
   return {
     id: exam.id,
-    certificationId: exam.certificationId,
     status: exam.status,
-    title: exam.title,
-    createdAt: exam.createdAt,
   };
+}
+
+export async function sendGeneratorMessage(message: GeneratorMessage): Promise<void> {
+  const validated = GeneratorMessage.parse(message);
+  await sqsClient.send(
+    new SendMessageCommand({
+      QueueUrl: config.generatorQueueUrl,
+      MessageBody: JSON.stringify(validated),
+    }),
+  );
 }
 
 export async function requestExamGeneration(
@@ -40,16 +50,11 @@ export async function requestExamGeneration(
   await createExamRecord(exam);
 
   const correlationId = uuidv4();
-  await sqsClient.send(
-    new SendMessageCommand({
-      QueueUrl: config.generatorQueueUrl,
-      MessageBody: JSON.stringify({
-        examId: exam.id,
-        certificationId,
-        correlationId,
-      }),
-    }),
-  );
+  await sendGeneratorMessage({
+    examId: exam.id,
+    certificationId,
+    correlationId,
+  });
 
   return exam;
 }

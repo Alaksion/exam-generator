@@ -20,10 +20,14 @@ vi.mock('../shared/repositories/certifications.js', () => ({
   updateCertification: vi.fn(),
 }));
 
-vi.mock('../shared/services/examGeneration.js', () => ({
-  requestExamGeneration: vi.fn(),
-  toCreatedExamResponse: vi.fn(),
-}));
+vi.mock('../shared/services/examGeneration.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/services/examGeneration.js')>();
+  return {
+    ...actual,
+    requestExamGeneration: vi.fn(),
+    toCreatedExamResponse: vi.fn(),
+  };
+});
 
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
@@ -218,16 +222,16 @@ describe('PUT /v1/certifications/{id}', () => {
 describe('POST /v1/exams', () => {
   const examResponse = {
     id: '22222222-2222-2222-2222-222222222222',
-    certificationId: certification.id,
     status: 'GENERATING' as const,
-    title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
-    createdAt: '2026-07-28T12:00:00.000Z',
   };
 
   it('returns 201 Created and requests exam generation', async () => {
     mockedRequestExamGeneration.mockResolvedValue({
       ...examResponse,
+      certificationId: certification.id,
       provider: certification.provider,
+      title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
+      createdAt: '2026-07-28T12:00:00.000Z',
       finishedAt: null,
       s3KeyJson: undefined,
       s3KeyPdf: undefined,
@@ -247,6 +251,17 @@ describe('POST /v1/exams', () => {
   it('returns 400 Bad Request when certificationId is missing', async () => {
     const result = (await handler(
       makeEvent('POST', '/v1/exams', {}),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedRequestExamGeneration).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 Bad Request when certificationId is not a valid UUID', async () => {
+    const result = (await handler(
+      makeEvent('POST', '/v1/exams', { certificationId: 'not-a-uuid' }),
     )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
