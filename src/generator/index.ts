@@ -5,16 +5,18 @@ import { config } from '../shared/config.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { transitionExamStatus } from '../shared/services/exam.js';
+import { generateExamQuestions } from '../shared/services/bedrock.js';
 
 export const STUB_SCHEMA_VERSION = '1.0.0';
 export const STUB_PDF_CONTENT = 'placeholder PDF content';
 
 const s3Client = new S3Client({});
 
-export function buildArtifactKeys(examId: string): { s3KeyJson: string; s3KeyPdf: string } {
+export function buildArtifactKeys(examId: string): { s3KeyJson: string; s3KeyPdf: string; s3KeyRaw: string } {
   return {
     s3KeyJson: `exams/${examId}/exam.json`,
     s3KeyPdf: `exams/${examId}/exam.pdf`,
+    s3KeyRaw: `exams/${examId}/raw.json`,
   };
 }
 
@@ -59,7 +61,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
     return;
   }
 
-  const { s3KeyJson, s3KeyPdf } = buildArtifactKeys(exam.id);
+  const rawResponses = await generateExamQuestions(exam, certification, message.correlationId);
+
+  const { s3KeyJson, s3KeyPdf, s3KeyRaw } = buildArtifactKeys(exam.id);
   const now = new Date();
   const transitioned = transitionExamStatus(exam, 'READY', now);
 
@@ -71,6 +75,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
     questions: [],
   };
 
+  await putArtifact(s3KeyRaw, JSON.stringify(rawResponses), 'application/json');
   await putArtifact(s3KeyJson, JSON.stringify(fullExam), 'application/json');
   await putArtifact(s3KeyPdf, Buffer.from(STUB_PDF_CONTENT), 'application/pdf');
 
