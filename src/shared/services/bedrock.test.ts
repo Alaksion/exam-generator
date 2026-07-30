@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   renderPrompt,
-  distributeQuestionAttributes,
+  buildQuestionContexts,
+  buildPromptContext,
+  regenerateQuestion,
   generateQuestionRaw,
   generateExamQuestions,
   PromptContext,
+  QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
 
@@ -56,9 +59,9 @@ describe('renderPrompt', () => {
   });
 });
 
-describe('distributeQuestionAttributes', () => {
+describe('buildQuestionContexts', () => {
   it('distributes difficulty and domains across questions', () => {
-    const attributes = distributeQuestionAttributes(certification.config);
+    const attributes = buildQuestionContexts(certification.config);
 
     expect(attributes).toHaveLength(certification.config.questionCount);
     attributes.forEach((attr, index) => {
@@ -79,12 +82,58 @@ describe('distributeQuestionAttributes', () => {
       domains: ['Cloud Concepts', 'Security', 'Billing'],
     };
 
-    const attributes = distributeQuestionAttributes(config);
+    const attributes = buildQuestionContexts(config);
 
     expect(attributes[0].domain).toBe('Cloud Concepts');
     expect(attributes[1].domain).toBe('Security');
     expect(attributes[2].domain).toBe('Billing');
     expect(attributes[3].domain).toBe('Cloud Concepts');
+  });
+});
+
+describe('buildPromptContext', () => {
+  it('combines question attributes with certification metadata', () => {
+    const attributes: QuestionAttributes = {
+      number: 1,
+      difficulty: 'medium',
+      domain: 'Cloud Concepts',
+    };
+
+    const context = buildPromptContext(attributes, certification);
+
+    expect(context).toEqual({
+      questionNumber: 1,
+      difficulty: 'medium',
+      domain: 'Cloud Concepts',
+      certificationName: certification.name,
+      code: certification.code,
+    });
+  });
+});
+
+describe('regenerateQuestion', () => {
+  it('renders and invokes Bedrock for a single question', async () => {
+    sendMock.mockResolvedValue(makeBedrockResponse('retried question'));
+
+    const attributes: QuestionAttributes = {
+      number: 2,
+      difficulty: 'easy',
+      domain: 'Security',
+    };
+
+    const raw = await regenerateQuestion(attributes, certification, 'corr-retry');
+
+    expect(raw).toBe('retried question');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    const calls = sendMock.mock.calls as Array<[unknown]>;
+    const commandInput = calls[0][0] as { modelId: string; body: Buffer };
+    expect(commandInput.modelId).toBe(certification.config.modelId);
+
+    const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
+    expect(requestBody.messages[0].content).toBe(
+      'Generate a easy question about Security for exam CLF-C02.',
+    );
   });
 });
 

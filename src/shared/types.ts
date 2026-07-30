@@ -56,6 +56,7 @@ export const Question = z.object({
   explanation: z.string().min(1),
   reference: z.string().optional(),
 });
+export type Question = z.infer<typeof Question>;
 
 export const ExamStatus = z.enum(['GENERATING', 'READY', 'FAILED']);
 export type ExamStatus = z.infer<typeof ExamStatus>;
@@ -74,6 +75,7 @@ export const Exam = z.object({
 export type Exam = z.infer<typeof Exam>;
 
 export const FullExam = Exam.extend({
+  schemaVersion: z.string().min(1),
   questions: z.array(Question),
 });
 export type FullExam = z.infer<typeof FullExam>;

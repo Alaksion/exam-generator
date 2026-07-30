@@ -24,7 +24,7 @@ export function renderPrompt(template: string, context: PromptContext): string {
   });
 }
 
-export function distributeQuestionAttributes(config: Certification['config']): QuestionAttributes[] {
+export function buildQuestionContexts(config: Certification['config']): QuestionAttributes[] {
   const { questionCount, difficultyDistribution, domains } = config;
 
   const easyCount = Math.round(difficultyDistribution.easy * questionCount);
@@ -41,6 +41,32 @@ export function distributeQuestionAttributes(config: Certification['config']): Q
     difficulty: difficulties[index] ?? 'medium',
     domain: domains[index % domains.length],
   }));
+}
+
+export function buildPromptContext(
+  context: QuestionAttributes,
+  certification: Certification,
+): PromptContext {
+  return {
+    questionNumber: context.number,
+    difficulty: context.difficulty,
+    domain: context.domain,
+    certificationName: certification.name,
+    code: certification.code,
+  };
+}
+
+export async function regenerateQuestion(
+  context: QuestionAttributes,
+  certification: Certification,
+  correlationId: string,
+): Promise<string> {
+  return generateQuestionRaw(
+    certification.config.modelId,
+    certification.config.promptTemplate,
+    buildPromptContext(context, certification),
+    correlationId,
+  );
 }
 
 export async function generateQuestionRaw(
@@ -86,7 +112,7 @@ export async function generateExamQuestions(
   certification: Certification,
   correlationId: string,
 ): Promise<string[]> {
-  const attributes = distributeQuestionAttributes(certification.config);
+  const attributes = buildQuestionContexts(certification.config);
   const rawResponses: string[] = [];
 
   for (const attribute of attributes) {

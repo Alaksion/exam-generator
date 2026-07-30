@@ -1,11 +1,12 @@
 import { SQSEvent, SQSRecord } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { GeneratorMessage } from '../shared/types.js';
+import { GeneratorMessage, FullExam } from '../shared/types.js';
 import { config } from '../shared/config.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { transitionExamStatus } from '../shared/services/exam.js';
-import { generateExamQuestions } from '../shared/services/bedrock.js';
+import { generateExamQuestions, buildQuestionContexts, regenerateQuestion } from '../shared/services/bedrock.js';
+import { parseExamQuestions } from '../shared/services/questionParser.js';
 
 export const STUB_SCHEMA_VERSION = '1.0.0';
 export const STUB_PDF_CONTENT = 'placeholder PDF content';
@@ -62,17 +63,31 @@ async function processRecord(record: SQSRecord): Promise<void> {
   }
 
   const rawResponses = await generateExamQuestions(exam, certification, message.correlationId);
+  const contexts = buildQuestionContexts(certification.config);
+  const questions = await parseExamQuestions(rawResponses, contexts, async (context) =>
+    regenerateQuestion(context, certification, message.correlationId),
+  );
 
   const { s3KeyJson, s3KeyPdf, s3KeyRaw } = buildArtifactKeys(exam.id);
   const now = new Date();
+
+  if (!questions) {
+    const failed = transitionExamStatus(exam, 'FAILED', now);
+    console.error('Exam generation failed after retry', { examId: exam.id, correlationId: message.correlationId });
+    await updateExamStatus(exam.id, 'FAILED', {
+      finishedAt: failed.finishedAt,
+    });
+    return;
+  }
+
   const transitioned = transitionExamStatus(exam, 'READY', now);
 
-  const fullExam = {
+  const fullExam: FullExam = {
     schemaVersion: STUB_SCHEMA_VERSION,
     ...transitioned,
     s3KeyJson,
     s3KeyPdf,
-    questions: [],
+    questions,
   };
 
   await putArtifact(s3KeyRaw, JSON.stringify(rawResponses), 'application/json');
