@@ -11,7 +11,7 @@ import {
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 import { NotFoundError } from '../shared/errors.js';
 import { getExamById, listExams } from '../shared/repositories/exams.js';
-import { getCanonicalExam } from '../shared/repositories/artifacts.js';
+import { getCanonicalExam, getPresignedDownloadUrl } from '../shared/repositories/artifacts.js';
 import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
@@ -38,6 +38,7 @@ vi.mock('../shared/repositories/exams.js', () => ({
 
 vi.mock('../shared/repositories/artifacts.js', () => ({
   getCanonicalExam: vi.fn(),
+  getPresignedDownloadUrl: vi.fn(),
 }));
 
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
@@ -50,6 +51,7 @@ const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
 const mockedGetExamById = vi.mocked(getExamById);
 const mockedListExams = vi.mocked(listExams);
 const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
+const mockedGetPresignedDownloadUrl = vi.mocked(getPresignedDownloadUrl);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -473,5 +475,49 @@ describe('GET /v1/exams', () => {
     expect(result.statusCode).toBe(400);
     expect(body.error).toBe('InvalidRequest');
     expect(mockedListExams).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /v1/exams/{id}/download', () => {
+  it('returns a presigned URL for a ready exam', async () => {
+    const downloadUrl = 'https://s3.example.com/presigned';
+    const expiresAt = '2026-07-31T12:10:00.000Z';
+    mockedGetExamById.mockResolvedValue(readyExam);
+    mockedGetPresignedDownloadUrl.mockResolvedValue({ url: downloadUrl, expiresAt });
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}/download`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.downloadUrl).toBe(downloadUrl);
+    expect(body.expiresAt).toBe(expiresAt);
+    expect(mockedGetPresignedDownloadUrl).toHaveBeenCalledWith(readyExam.s3KeyPdf);
+  });
+
+  it('returns 409 ExamNotReady while the exam is GENERATING', async () => {
+    mockedGetExamById.mockResolvedValue(generatingExam);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}/download`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(409);
+    expect(body.error).toBe('ExamNotReady');
+    expect(mockedGetPresignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an unknown exam', async () => {
+    mockedGetExamById.mockResolvedValue(null);
+
+    const result = (await handler(
+      makeEvent('GET', `/v1/exams/${examId}/download`),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
   });
 });

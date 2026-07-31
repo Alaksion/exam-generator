@@ -6,7 +6,7 @@ import { isApiError, NotFoundError, ExamNotReadyError } from '../shared/errors.j
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
 import { listExams } from '../shared/repositories/exams.js';
 import { getExamById } from '../shared/repositories/exams.js';
-import { getCanonicalExam } from '../shared/repositories/artifacts.js';
+import { getCanonicalExam, getPresignedDownloadUrl } from '../shared/repositories/artifacts.js';
 import { requestExamGeneration, toCreatedExamResponse, RequestExamGeneration } from '../shared/services/examGeneration.js';
 import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
@@ -97,6 +97,18 @@ router.register('GET', '/v1/exams/{id}/status', async (_event, params) => {
     createdAt: exam.createdAt,
     finishedAt: exam.finishedAt,
   });
+});
+
+router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
+  const exam = await loadExamOrThrow(params.id);
+  if (exam.status !== 'READY') {
+    throw new ExamNotReadyError();
+  }
+  if (!exam.s3KeyPdf) {
+    throw new ExamNotReadyError();
+  }
+  const { url, expiresAt } = await getPresignedDownloadUrl(exam.s3KeyPdf);
+  return jsonResponse(200, { downloadUrl: url, expiresAt });
 });
 
 router.register('DELETE', '/v1/exams/{id}', async () => {
