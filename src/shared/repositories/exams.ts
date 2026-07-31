@@ -78,6 +78,7 @@ export interface ListExamsFilters {
 
 export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exam[]; nextCursor?: string }> {
   const limit = Math.min(filters.limit ?? 20, 100);
+  const status = filters.status ?? 'READY';
 
   // Use the status index when no certification filter is requested.
   if (!filters.certificationId) {
@@ -87,7 +88,7 @@ export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exa
         IndexName: 'StatusCreatedAtIndex',
         KeyConditionExpression: '#status = :status',
         ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':status': filters.status ?? 'READY' },
+        ExpressionAttributeValues: { ':status': status },
         ScanIndexForward: false,
         Limit: limit,
         ExclusiveStartKey: filters.cursor
@@ -118,16 +119,14 @@ export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exa
       ExpressionAttributeValues: { ':certificationId': filters.certificationId },
       ScanIndexForward: false,
       Limit: limit,
-        ExclusiveStartKey: filters.cursor
-          ? (JSON.parse(Buffer.from(filters.cursor, 'base64').toString()) as Record<string, unknown>)
-          : undefined,
+      ExclusiveStartKey: filters.cursor
+        ? (JSON.parse(Buffer.from(filters.cursor, 'base64').toString()) as Record<string, unknown>)
+        : undefined,
     }),
   );
 
   let exams = (result.Items as unknown as Exam[]) ?? [];
-  if (filters.status) {
-    exams = exams.filter((exam) => exam.status === filters.status);
-  }
+  exams = exams.filter((exam) => exam.status === status);
   if (filters.provider) {
     exams = exams.filter((exam) => exam.provider === filters.provider);
   }

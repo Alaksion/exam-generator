@@ -239,7 +239,7 @@ Resources:
             - AttributeName: createdAt
               KeyType: RANGE
           Projection:
-            ProjectionType: KEYS_ONLY
+            ProjectionType: ALL
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: true
       Tags:

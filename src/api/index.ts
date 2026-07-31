@@ -1,13 +1,14 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
-import { Router, jsonResponse, notFound, parseBody, getQueryParam } from '../shared/router.js';
+import { Router, jsonResponse, notFound, parseBody } from '../shared/router.js';
 import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
 import { isApiError, NotFoundError, ExamNotReadyError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
+import { listExams } from '../shared/repositories/exams.js';
 import { getExamById } from '../shared/repositories/exams.js';
 import { getCanonicalExam } from '../shared/repositories/artifacts.js';
 import { requestExamGeneration, toCreatedExamResponse, RequestExamGeneration } from '../shared/services/examGeneration.js';
-import { Exam } from '../shared/types.js';
+import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
 const router = new Router();
 
@@ -47,9 +48,24 @@ router.register('POST', '/v1/exams', async (event) => {
 });
 
 router.register('GET', '/v1/exams', async (event) => {
+  const query = z
+    .object({
+      status: ExamStatus.default('READY'),
+      provider: Provider.optional(),
+      certificationId: z.string().uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+      cursor: z.string().min(1).optional(),
+    })
+    .parse(Object.fromEntries(new URLSearchParams(event.rawQueryString)));
+
+  const { exams, nextCursor } = await listExams(query);
+
   return jsonResponse(200, {
-    items: [],
-    nextCursor: getQueryParam(event, 'cursor'),
+    items: exams,
+    cursor: {
+      nextCursor: nextCursor ?? null,
+      hasNextPage: Boolean(nextCursor),
+    },
   });
 });
 

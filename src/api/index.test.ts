@@ -10,7 +10,7 @@ import {
 } from '../shared/repositories/certifications.js';
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 import { NotFoundError } from '../shared/errors.js';
-import { getExamById } from '../shared/repositories/exams.js';
+import { getExamById, listExams } from '../shared/repositories/exams.js';
 import { getCanonicalExam } from '../shared/repositories/artifacts.js';
 import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
 
@@ -33,6 +33,7 @@ vi.mock('../shared/services/examGeneration.js', async (importOriginal) => {
 
 vi.mock('../shared/repositories/exams.js', () => ({
   getExamById: vi.fn(),
+  listExams: vi.fn(),
 }));
 
 vi.mock('../shared/repositories/artifacts.js', () => ({
@@ -47,18 +48,26 @@ const mockedUpdateRecord = vi.mocked(updateCertificationRecord);
 const mockedRequestExamGeneration = vi.mocked(requestExamGeneration);
 const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
 const mockedGetExamById = vi.mocked(getExamById);
+const mockedListExams = vi.mocked(listExams);
 const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function makeEvent(method: string, path: string, body?: unknown): APIGatewayProxyEventV2 {
+function makeEvent(
+  method: string,
+  path: string,
+  body?: unknown,
+  query?: Record<string, string>,
+): APIGatewayProxyEventV2 {
+  const rawQueryString = query ? new URLSearchParams(query).toString() : '';
   return {
     version: '2.0',
     routeKey: `${method} ${path}`,
     rawPath: path,
-    rawQueryString: '',
+    rawQueryString,
+    queryStringParameters: query ?? {},
     headers: {},
     body: body === undefined ? undefined : JSON.stringify(body),
     requestContext: {
@@ -398,5 +407,71 @@ describe('GET /v1/exams/{id}', () => {
 
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
+  });
+});
+
+describe('GET /v1/exams', () => {
+  it('defaults to status=READY and returns exams with a cursor object', async () => {
+    mockedListExams.mockResolvedValue({ exams: [readyExam] });
+
+    const result = (await handler(makeEvent('GET', '/v1/exams'))) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as {
+      items: unknown[];
+      cursor: { nextCursor: string | null; hasNextPage: boolean };
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.items).toEqual([readyExam]);
+    expect(body.cursor).toEqual({ nextCursor: null, hasNextPage: false });
+    expect(mockedListExams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'READY',
+        limit: 20,
+      }),
+    );
+  });
+
+  it('supports status, provider, certificationId, limit, and cursor query params', async () => {
+    mockedListExams.mockResolvedValue({
+      exams: [readyExam],
+      nextCursor: 'c3RhcnRLZXk=',
+    });
+
+    const result = (await handler(
+      makeEvent('GET', '/v1/exams', undefined, {
+        status: 'GENERATING',
+        provider: 'aws',
+        certificationId: certification.id,
+        limit: '10',
+        cursor: 'c3RhcnRLZXk=',
+      }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as {
+      items: unknown[];
+      cursor: { nextCursor: string; hasNextPage: boolean };
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.items).toEqual([readyExam]);
+    expect(body.cursor.nextCursor).toBe('c3RhcnRLZXk=');
+    expect(body.cursor.hasNextPage).toBe(true);
+    expect(mockedListExams).toHaveBeenCalledWith({
+      status: 'GENERATING',
+      provider: 'aws',
+      certificationId: certification.id,
+      limit: 10,
+      cursor: 'c3RhcnRLZXk=',
+    });
+  });
+
+  it('returns 400 Bad Request for invalid query params', async () => {
+    const result = (await handler(
+      makeEvent('GET', '/v1/exams', undefined, { limit: 'not-a-number' }),
+    )) as APIGatewayProxyStructuredResultV2;
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedListExams).not.toHaveBeenCalled();
   });
 });
