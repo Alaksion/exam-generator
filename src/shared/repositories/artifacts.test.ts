@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { getCanonicalExam, getPresignedDownloadUrl } from './artifacts.js';
+import { deleteArtifacts, getCanonicalExam, getPresignedDownloadUrl } from './artifacts.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
-const mockGetSignedUrl = vi.hoisted<Mock<[unknown, unknown, unknown], Promise<string>>>(() => vi.fn());
+const mockGetSignedUrl = vi.hoisted<Mock<[unknown, unknown, unknown], Promise<string>>>(() =>
+  vi.fn(),
+);
 
 vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn(() => ({ send: mockSend })),
@@ -13,6 +15,8 @@ vi.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: vi.fn((client: unknown, command: unknown, options: unknown) =>
     mockGetSignedUrl(client, command, options),
   ) as (client: unknown, command: unknown, options: unknown) => Promise<string>,
+
+  DeleteObjectCommand: vi.fn((input: unknown) => input),
 }));
 
 const fullExam = {
@@ -55,9 +59,9 @@ describe('getCanonicalExam', () => {
   it('throws when the artifact body is empty', async () => {
     mockSend.mockResolvedValue({ Body: { transformToString: vi.fn().mockResolvedValue('') } });
 
-    await expect(getCanonicalExam('exams/22222222-2222-2222-2222-222222222222/exam.json')).rejects.toThrow(
-      'Artifact body is empty',
-    );
+    await expect(
+      getCanonicalExam('exams/22222222-2222-2222-2222-222222222222/exam.json'),
+    ).rejects.toThrow('Artifact body is empty');
   });
 });
 
@@ -67,7 +71,9 @@ describe('getPresignedDownloadUrl', () => {
     mockGetSignedUrl.mockResolvedValue(signedUrl);
 
     const before = Date.now();
-    const result = await getPresignedDownloadUrl('exams/22222222-2222-2222-2222-222222222222/exam.pdf');
+    const result = await getPresignedDownloadUrl(
+      'exams/22222222-2222-2222-2222-222222222222/exam.pdf',
+    );
     const after = Date.now();
 
     expect(result.url).toBe(signedUrl);
@@ -83,5 +89,33 @@ describe('getPresignedDownloadUrl', () => {
       }),
       { expiresIn: 300 },
     );
+  });
+});
+
+describe('deleteArtifact', () => {
+  it('deletes a single S3 object', async () => {
+    mockSend.mockResolvedValue({});
+
+    await deleteArtifact('exams/22222222-2222-2222-2222-222222222222/exam.json');
+
+    expect(mockSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Bucket: 'test-artifacts-bucket',
+        Key: 'exams/22222222-2222-2222-2222-222222222222/exam.json',
+      }),
+    );
+  });
+});
+
+describe('deleteArtifacts', () => {
+  it('deletes multiple S3 objects in parallel', async () => {
+    mockSend.mockResolvedValue({});
+
+    await deleteArtifacts([
+      'exams/22222222-2222-2222-2222-222222222222/exam.json',
+      'exams/22222222-2222-2222-2222-222222222222/exam.pdf',
+    ]);
+
+    expect(mockSend).toHaveBeenCalledTimes(2);
   });
 });
