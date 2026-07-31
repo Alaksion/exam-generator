@@ -76,66 +76,58 @@ export interface ListExamsFilters {
   cursor?: string;
 }
 
+function encodeCursor(key: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(key)).toString('base64');
+}
+
+function decodeCursor(cursor: string): Record<string, unknown> {
+  return JSON.parse(Buffer.from(cursor, 'base64').toString()) as Record<string, unknown>;
+}
+
 export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exam[]; nextCursor?: string }> {
   const limit = Math.min(filters.limit ?? 20, 100);
+  const status = filters.status ?? 'READY';
 
-  // Use the status index when no certification filter is requested.
-  if (!filters.certificationId) {
-    const result = await client.send(
-      new QueryCommand({
-        TableName: config.examsTable,
-        IndexName: 'StatusCreatedAtIndex',
-        KeyConditionExpression: '#status = :status',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':status': filters.status ?? 'READY' },
-        ScanIndexForward: false,
-        Limit: limit,
-        ExclusiveStartKey: filters.cursor
-          ? (JSON.parse(Buffer.from(filters.cursor, 'base64').toString()) as Record<string, unknown>)
-          : undefined,
-      }),
-    );
+  const exams: Exam[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined = filters.cursor ? decodeCursor(filters.cursor) : undefined;
 
-    let exams = (result.Items as unknown as Exam[]) ?? [];
-    if (filters.provider) {
-      exams = exams.filter((exam) => exam.provider === filters.provider);
+  do {
+    let result;
+    if (!filters.certificationId) {
+      result = await client.send(
+        new QueryCommand({
+          TableName: config.examsTable,
+          IndexName: 'StatusCreatedAtIndex',
+          KeyConditionExpression: '#status = :status',
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: { ':status': status },
+          ScanIndexForward: false,
+          Limit: limit,
+          ExclusiveStartKey: lastEvaluatedKey,
+        }),
+      );
+    } else {
+      result = await client.send(
+        new QueryCommand({
+          TableName: config.examsTable,
+          IndexName: 'CertificationIdIndex',
+          KeyConditionExpression: 'certificationId = :certificationId',
+          ExpressionAttributeValues: { ':certificationId': filters.certificationId },
+          ScanIndexForward: false,
+          Limit: limit,
+          ExclusiveStartKey: lastEvaluatedKey,
+        }),
+      );
     }
 
-    return {
-      exams,
-      nextCursor: result.LastEvaluatedKey
-        ? Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64')
-        : undefined,
-    };
-  }
-
-  // Otherwise query by certificationId and filter in memory.
-  const result = await client.send(
-    new QueryCommand({
-      TableName: config.examsTable,
-      IndexName: 'CertificationIdIndex',
-      KeyConditionExpression: 'certificationId = :certificationId',
-      ExpressionAttributeValues: { ':certificationId': filters.certificationId },
-      ScanIndexForward: false,
-      Limit: limit,
-        ExclusiveStartKey: filters.cursor
-          ? (JSON.parse(Buffer.from(filters.cursor, 'base64').toString()) as Record<string, unknown>)
-          : undefined,
-    }),
-  );
-
-  let exams = (result.Items as unknown as Exam[]) ?? [];
-  if (filters.status) {
-    exams = exams.filter((exam) => exam.status === filters.status);
-  }
-  if (filters.provider) {
-    exams = exams.filter((exam) => exam.provider === filters.provider);
-  }
+    let page = (result.Items as unknown as Exam[]) ?? [];
+    page = page.filter((exam) => exam.status === status && (!filters.provider || exam.provider === filters.provider));
+    exams.push(...page);
+    lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastEvaluatedKey && exams.length < limit);
 
   return {
-    exams,
-    nextCursor: result.LastEvaluatedKey
-      ? Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64')
-      : undefined,
+    exams: exams.slice(0, limit),
+    nextCursor: lastEvaluatedKey ? encodeCursor(lastEvaluatedKey) : undefined,
   };
 }
