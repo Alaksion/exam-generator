@@ -8,8 +8,9 @@ import { transitionExamStatus } from '../shared/services/exam.js';
 import { generateExamQuestions, buildQuestionContexts, regenerateQuestion } from '../shared/services/bedrock.js';
 import { parseExamQuestions } from '../shared/services/questionParser.js';
 
+import { renderExamPdf } from '../shared/services/pdfRenderer.js';
+
 export const STUB_SCHEMA_VERSION = '1.0.0';
-export const STUB_PDF_CONTENT = 'placeholder PDF content';
 
 const s3Client = new S3Client({});
 
@@ -92,7 +93,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
 
   await putArtifact(s3KeyRaw, JSON.stringify(rawResponses), 'application/json');
   await putArtifact(s3KeyJson, JSON.stringify(fullExam), 'application/json');
-  await putArtifact(s3KeyPdf, Buffer.from(STUB_PDF_CONTENT), 'application/pdf');
+
+  const pdfBuffer = await renderExamPdf(fullExam);
+  await putArtifact(s3KeyPdf, pdfBuffer, 'application/pdf');
 
   await updateExamStatus(exam.id, 'READY', {
     finishedAt: transitioned.finishedAt,

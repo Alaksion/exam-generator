@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SQSEvent } from 'aws-lambda';
-import { handler, buildArtifactKeys, STUB_SCHEMA_VERSION, STUB_PDF_CONTENT } from './index.js';
+import { handler, buildArtifactKeys, STUB_SCHEMA_VERSION } from './index.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { generateExamQuestions } from '../shared/services/bedrock.js';
 import { parseExamQuestions } from '../shared/services/questionParser.js';
+import { renderExamPdf } from '../shared/services/pdfRenderer.js';
 import { certification } from '../test/fixtures/certification.js';
 import { Exam } from '../shared/types.js';
 
@@ -32,11 +33,16 @@ vi.mock('../shared/services/questionParser.js', () => ({
   parseExamQuestions: vi.fn(),
 }));
 
+vi.mock('../shared/services/pdfRenderer.js', () => ({
+  renderExamPdf: vi.fn(),
+}));
+
 const mockedGetExam = vi.mocked(getExamById);
 const mockedUpdateExam = vi.mocked(updateExamStatus);
 const mockedGetCert = vi.mocked(getCertificationById);
 const mockedGenerateExamQuestions = vi.mocked(generateExamQuestions);
 const mockedParseExamQuestions = vi.mocked(parseExamQuestions);
+const mockedRenderExamPdf = vi.mocked(renderExamPdf);
 
 const examId = '22222222-2222-2222-2222-222222222222';
 const correlationId = '33333333-3333-3333-3333-333333333333';
@@ -102,6 +108,8 @@ describe('generator handler', () => {
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
     mockedParseExamQuestions.mockResolvedValue([sampleQuestion]);
+    const pdfBytes = Buffer.from('mock-pdf-bytes');
+    mockedRenderExamPdf.mockResolvedValue(pdfBytes);
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
@@ -114,6 +122,14 @@ describe('generator handler', () => {
       expect.objectContaining({
         s3KeyJson: keys.s3KeyJson,
         s3KeyPdf: keys.s3KeyPdf,
+      }),
+    );
+
+    expect(mockedRenderExamPdf).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schemaVersion: STUB_SCHEMA_VERSION,
+        status: 'READY',
+        questions: [sampleQuestion],
       }),
     );
 
@@ -147,7 +163,7 @@ describe('generator handler', () => {
     );
     expect(pdfCall).toBeDefined();
     const pdfBody = (pdfCall![0] as { Body: Buffer }).Body;
-    expect(pdfBody.toString()).toBe(STUB_PDF_CONTENT);
+    expect(pdfBody).toEqual(pdfBytes);
   });
 
   it('marks the exam FAILED when question parsing fails after retry', async () => {
