@@ -26,7 +26,7 @@ Parameters:
     Description: Burst requests allowed per API stage.
   WafRateLimit:
     Type: Number
-    Default: 2000
+    Default: 15000
     Description: Maximum requests allowed from a single IP within a 5-minute window.
 
 Globals:
@@ -78,9 +78,6 @@ Resources:
           HttpMethod: '*'
           ThrottlingRateLimit: !Ref ApiThrottleRateLimit
           ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
-          LoggingLevel: INFO
-          MetricsEnabled: true
-          DataTraceEnabled: false
 
   ApiKeyAuthorizerFunction:
     Type: AWS::Serverless::Function
@@ -120,7 +117,7 @@ Resources:
     Type: AWS::ApiGateway::UsagePlan
     Properties:
       UsagePlanName: !Sub ${AWS::StackName}-public-api-usage-plan
-      Description: Throttling and quota limits for the public API.
+      Description: Throttling limits for the public API.
       ApiStages:
         - ApiId: !Ref PublicApi
           Stage: !Ref Environment
@@ -128,9 +125,6 @@ Resources:
             '/*':
               RateLimit: !Ref ApiThrottleRateLimit
               BurstLimit: !Ref ApiThrottleBurstLimit
-      Quota:
-        Limit: 1000000
-        Period: DAY
       Tags:
         - Key: Project
           Value: exam-generator
@@ -161,6 +155,10 @@ Resources:
       Scope: REGIONAL
       DefaultAction:
         Allow: {}
+      CustomResponseBodies:
+        RateLimitExceeded:
+          ContentType: APPLICATION_JSON
+          Content: '{"error":"RateLimitExceeded","message":"Too many requests from this IP. Please slow down."}'
       VisibilityConfig:
         SampledRequestsEnabled: true
         CloudWatchMetricsEnabled: true
@@ -173,7 +171,10 @@ Resources:
               Limit: !Ref WafRateLimit
               AggregateKeyType: IP
           Action:
-            Block: {}
+            Block:
+              CustomResponse:
+                ResponseCode: 429
+                CustomResponseBodyKey: RateLimitExceeded
           VisibilityConfig:
             SampledRequestsEnabled: true
             CloudWatchMetricsEnabled: true
