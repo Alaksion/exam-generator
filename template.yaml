@@ -26,7 +26,7 @@ Parameters:
     Description: Burst requests allowed per API stage.
   WafRateLimit:
     Type: Number
-    Default: 15000
+    Default: 3000
     Description: Maximum requests allowed from a single IP within a 5-minute window.
 
 Globals:
@@ -67,6 +67,7 @@ Resources:
         MaxAge: "'600'"
       Auth:
         DefaultAuthorizer: ApiKeyAuthorizer
+        ApiKeyRequired: true
         Authorizers:
           ApiKeyAuthorizer:
             FunctionArn: !GetAtt ApiKeyAuthorizerFunction.Arn
