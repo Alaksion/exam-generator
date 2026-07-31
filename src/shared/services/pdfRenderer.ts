@@ -13,26 +13,23 @@ type PdfMakeInstance = typeof pdfmake & {
   virtualfs: VirtualFileSystem;
 };
 
-let fontsInitialized = false;
+const pdfMakeInstance = pdfmake as unknown as PdfMakeInstance;
 
-function getInstance(): PdfMakeInstance {
-  return pdfmake as unknown as PdfMakeInstance;
-}
+let fontsInitialized = false;
 
 function initializeFonts(): void {
   if (fontsInitialized) {
     return;
   }
 
-  const instance = getInstance();
   for (const [filename, base64] of Object.entries(vfs)) {
     if (typeof base64 !== 'string') {
       continue;
     }
-    instance.virtualfs.writeFileSync(filename, Buffer.from(base64, 'base64'));
+    pdfMakeInstance.virtualfs.writeFileSync(filename, Buffer.from(base64, 'base64'));
   }
 
-  instance.addFonts({
+  pdfMakeInstance.addFonts({
     Roboto: {
       normal: 'Roboto-Regular.ttf',
       bold: 'Roboto-Medium.ttf',
@@ -40,8 +37,8 @@ function initializeFonts(): void {
       bolditalics: 'Roboto-MediumItalic.ttf',
     },
   });
-  instance.setUrlAccessPolicy(() => false);
-  instance.setLocalAccessPolicy(() => false);
+  pdfMakeInstance.setUrlAccessPolicy(() => false);
+  pdfMakeInstance.setLocalAccessPolicy(() => false);
   fontsInitialized = true;
 }
 
@@ -95,7 +92,6 @@ function buildDocument(exam: FullExam): DocumentDefinition {
 
 export async function renderExamPdf(exam: FullExam): Promise<Buffer> {
   initializeFonts();
-  const instance = getInstance();
-  const pdf = instance.createPdf(buildDocument(exam));
+  const pdf = pdfMakeInstance.createPdf(buildDocument(exam));
   return pdf.getBuffer();
 }

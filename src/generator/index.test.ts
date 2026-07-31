@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SQSEvent } from 'aws-lambda';
-import { handler, buildArtifactKeys, STUB_SCHEMA_VERSION } from './index.js';
+import { handler, buildArtifactKeys, CANONICAL_EXAM_SCHEMA_VERSION } from './index.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { generateExamQuestions } from '../shared/services/bedrock.js';
@@ -127,7 +127,7 @@ describe('generator handler', () => {
 
     expect(mockedRenderExamPdf).toHaveBeenCalledWith(
       expect.objectContaining({
-        schemaVersion: STUB_SCHEMA_VERSION,
+        schemaVersion: CANONICAL_EXAM_SCHEMA_VERSION,
         status: 'READY',
         questions: [sampleQuestion],
       }),
@@ -153,7 +153,7 @@ describe('generator handler', () => {
       questions: unknown[];
       s3KeyJson: string;
     };
-    expect(jsonBody.schemaVersion).toBe(STUB_SCHEMA_VERSION);
+    expect(jsonBody.schemaVersion).toBe(CANONICAL_EXAM_SCHEMA_VERSION);
     expect(jsonBody.status).toBe('READY');
     expect(jsonBody.questions).toEqual([sampleQuestion]);
     expect(jsonBody.s3KeyJson).toBe(keys.s3KeyJson);
