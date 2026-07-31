@@ -10,9 +10,17 @@ import {
 } from '../shared/repositories/certifications.js';
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 import { NotFoundError } from '../shared/errors.js';
-import { getExamById, listExams } from '../shared/repositories/exams.js';
-import { getCanonicalExam, getPresignedDownloadUrl } from '../shared/repositories/artifacts.js';
-import { certification, certificationInput, certificationUpdate } from '../test/fixtures/certification.js';
+import {
+  getCanonicalExam,
+  getPresignedDownloadUrl,
+  deleteArtifacts,
+} from '../shared/repositories/artifacts.js';
+import { getExamById, listExams, deleteExam } from '../shared/repositories/exams.js';
+import {
+  certification,
+  certificationInput,
+  certificationUpdate,
+} from '../test/fixtures/certification.js';
 
 vi.mock('../shared/repositories/certifications.js', () => ({
   createCertification: vi.fn(),
@@ -34,11 +42,13 @@ vi.mock('../shared/services/examGeneration.js', async (importOriginal) => {
 vi.mock('../shared/repositories/exams.js', () => ({
   getExamById: vi.fn(),
   listExams: vi.fn(),
+  deleteExam: vi.fn(),
 }));
 
 vi.mock('../shared/repositories/artifacts.js', () => ({
   getCanonicalExam: vi.fn(),
   getPresignedDownloadUrl: vi.fn(),
+  deleteArtifacts: vi.fn(),
 }));
 
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
@@ -50,8 +60,10 @@ const mockedRequestExamGeneration = vi.mocked(requestExamGeneration);
 const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
 const mockedGetExamById = vi.mocked(getExamById);
 const mockedListExams = vi.mocked(listExams);
+const mockedDeleteExam = vi.mocked(deleteExam);
 const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 const mockedGetPresignedDownloadUrl = vi.mocked(getPresignedDownloadUrl);
+const mockedDeleteArtifacts = vi.mocked(deleteArtifacts);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,7 +101,9 @@ function makeEvent(
 
 describe('health endpoint', () => {
   it('returns 200 OK with a status payload', async () => {
-    const result = (await handler(makeEvent('GET', '/v1/health'))) as APIGatewayProxyStructuredResultV2;
+    const result = (await handler(
+      makeEvent('GET', '/v1/health'),
+    )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { status: string };
 
     expect(result.statusCode).toBe(200);
@@ -106,7 +120,11 @@ describe('POST /v1/certifications', () => {
     const result = (await handler(
       makeEvent('POST', '/v1/certifications', certificationInput),
     )) as APIGatewayProxyStructuredResultV2;
-    const body = JSON.parse(result.body ?? '{}') as { id: string; provider: string; config: object };
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      provider: string;
+      config: object;
+    };
 
     expect(result.statusCode).toBe(201);
     expect(body.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
@@ -149,7 +167,9 @@ describe('GET /v1/certifications', () => {
   it('returns active certifications without promptTemplate', async () => {
     mockedListCertifications.mockResolvedValue([certification]);
 
-    const result = (await handler(makeEvent('GET', '/v1/certifications'))) as APIGatewayProxyStructuredResultV2;
+    const result = (await handler(
+      makeEvent('GET', '/v1/certifications'),
+    )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as { items: Array<{ config: object }> };
 
     expect(result.statusCode).toBe(200);
@@ -191,9 +211,17 @@ describe('PUT /v1/certifications/{id}', () => {
     mockedUpdateRecord.mockResolvedValue(undefined);
 
     const result = (await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', certificationUpdate),
+      makeEvent(
+        'PUT',
+        '/v1/certifications/11111111-1111-1111-1111-111111111111',
+        certificationUpdate,
+      ),
     )) as APIGatewayProxyStructuredResultV2;
-    const body = JSON.parse(result.body ?? '{}') as { id: string; provider: string; config: object };
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      provider: string;
+      config: object;
+    };
 
     expect(result.statusCode).toBe(200);
     expect(body.id).toBe('11111111-1111-1111-1111-111111111111');
@@ -377,7 +405,11 @@ describe('GET /v1/exams/{id}', () => {
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}`),
     )) as APIGatewayProxyStructuredResultV2;
-    const body = JSON.parse(result.body ?? '{}') as { schemaVersion: string; status: string; id: string };
+    const body = JSON.parse(result.body ?? '{}') as {
+      schemaVersion: string;
+      status: string;
+      id: string;
+    };
 
     expect(result.statusCode).toBe(200);
     expect(body.schemaVersion).toBe('1.0.0');
@@ -416,7 +448,9 @@ describe('GET /v1/exams', () => {
   it('defaults to status=READY and returns exams with a cursor object', async () => {
     mockedListExams.mockResolvedValue({ exams: [readyExam] });
 
-    const result = (await handler(makeEvent('GET', '/v1/exams'))) as APIGatewayProxyStructuredResultV2;
+    const result = (await handler(
+      makeEvent('GET', '/v1/exams'),
+    )) as APIGatewayProxyStructuredResultV2;
     const body = JSON.parse(result.body ?? '{}') as {
       items: unknown[];
       cursor: { nextCursor: string | null; hasNextPage: boolean };
@@ -508,6 +542,35 @@ describe('GET /v1/exams/{id}/download', () => {
     expect(body.error).toBe('ExamNotReady');
     expect(mockedGetPresignedDownloadUrl).not.toHaveBeenCalled();
   });
+});
+
+describe('DELETE /v1/exams/{id}', () => {
+  it('deletes the DynamoDB row and associated S3 objects', async () => {
+    mockedGetExamById.mockResolvedValue(readyExam);
+    mockedDeleteArtifacts.mockResolvedValue(undefined);
+    mockedDeleteExam.mockResolvedValue(undefined);
+
+    const result = (await handler(
+      makeEvent('DELETE', `/v1/exams/${examId}`),
+    )) as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(204);
+    expect(mockedDeleteArtifacts).toHaveBeenCalledWith([readyExam.s3KeyJson, readyExam.s3KeyPdf]);
+    expect(mockedDeleteExam).toHaveBeenCalledWith(examId);
+  });
+
+  it('deletes the DynamoDB row when no S3 objects exist', async () => {
+    mockedGetExamById.mockResolvedValue(generatingExam);
+    mockedDeleteExam.mockResolvedValue(undefined);
+
+    const result = (await handler(
+      makeEvent('DELETE', `/v1/exams/${examId}`),
+    )) as APIGatewayProxyStructuredResultV2;
+
+    expect(result.statusCode).toBe(204);
+    expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
+    expect(mockedDeleteExam).toHaveBeenCalledWith(examId);
+  });
 
   it('returns 404 Not Found for an unknown exam', async () => {
     mockedGetExamById.mockResolvedValue(null);
@@ -519,5 +582,8 @@ describe('GET /v1/exams/{id}/download', () => {
 
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
+
+    expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
+    expect(mockedDeleteExam).not.toHaveBeenCalled();
   });
 });
