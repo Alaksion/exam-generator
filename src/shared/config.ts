@@ -6,6 +6,18 @@ export function requireEnv(name: string): string {
   return value;
 }
 
+export function getIntEnv(name: string, defaultValue: number): number {
+  const value = process.env[name];
+  if (!value) {
+    return defaultValue;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed) || parsed <= 0) {
+    throw new Error(`Invalid integer environment variable: ${name}`);
+  }
+  return parsed;
+}
+
 export const config = {
   region: process.env.AWS_REGION || 'us-east-1',
   bedrockModelDefault: process.env.BEDROCK_MODEL_DEFAULT || 'anthropic.claude-3-haiku-20240307-v1:0',
@@ -13,4 +25,5 @@ export const config = {
   examsTable: requireEnv('DYNAMODB_EXAMS_TABLE'),
   generatorQueueUrl: requireEnv('SQS_GENERATOR_QUEUE_URL'),
   artifactsBucket: requireEnv('S3_ARTIFACTS_BUCKET'),
+  presignedUrlExpirationSeconds: getIntEnv('PRESIGNED_URL_EXPIRATION_SECONDS', 300),
 } as const;
