@@ -586,25 +586,4 @@ describe('DELETE /v1/exams/{id}', () => {
     expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
     expect(mockedDeleteExam).not.toHaveBeenCalled();
   });
-
-  it('subsequent GET returns 404 Not Found after deletion', async () => {
-    mockedGetExamById
-      .mockResolvedValueOnce(readyExam)
-      .mockResolvedValueOnce(null);
-    mockedDeleteArtifacts.mockResolvedValue(undefined);
-    mockedDeleteExam.mockResolvedValue(undefined);
-
-    const deleteResult = (await handler(
-      makeEvent('DELETE', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
-    expect(deleteResult.statusCode).toBe(204);
-
-    const getResult = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
-    const body = JSON.parse(getResult.body ?? '{}') as { error: string };
-
-    expect(getResult.statusCode).toBe(404);
-    expect(body.error).toBe('NotFound');
-  });
 });

@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { deleteArtifacts, getCanonicalExam, getPresignedDownloadUrl } from './artifacts.js';
+import {
+  deleteArtifact,
+  deleteArtifacts,
+  getCanonicalExam,
+  getPresignedDownloadUrl,
+} from './artifacts.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
 const mockGetSignedUrl = vi.hoisted<Mock<[unknown, unknown, unknown], Promise<string>>>(() =>
