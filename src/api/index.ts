@@ -101,10 +101,7 @@ router.register('GET', '/v1/exams/{id}/status', async (_event, params) => {
 
 router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
   const exam = await loadExamOrThrow(params.id);
-  if (exam.status !== 'READY') {
-    throw new ExamNotReadyError();
-  }
-  if (!exam.s3KeyPdf) {
+  if (exam.status !== 'READY' || !exam.s3KeyPdf) {
     throw new ExamNotReadyError();
   }
   const { url, expiresAt } = await getPresignedDownloadUrl(exam.s3KeyPdf);

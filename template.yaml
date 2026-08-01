@@ -34,7 +34,7 @@ Globals:
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
-        PRESIGNED_URL_EXPIRATION_SECONDS: 300
+        PRESIGNED_URL_EXPIRATION_SECONDS: '300'
     Tags:
       Project: exam-generator
       Environment: !Ref Environment
