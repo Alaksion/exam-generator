@@ -121,10 +121,7 @@ router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
 });
 
 router.register('DELETE', '/v1/exams/{id}', async (_event, params) => {
-  const exam = await getExamById(params.id);
-  if (!exam) {
-    throw new NotFoundError('Exam');
-  }
+  const exam = await loadExamOrThrow(params.id);
 
   const s3Keys = [exam.s3KeyJson, exam.s3KeyPdf].filter((key): key is string => Boolean(key));
   if (s3Keys.length > 0) {
