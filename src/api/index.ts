@@ -1,13 +1,25 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody } from '../shared/router.js';
-import { createCertification, updateCertificationById, toPublicCertification } from '../shared/services/certification.js';
+import {
+  createCertification,
+  updateCertificationById,
+  toPublicCertification,
+} from '../shared/services/certification.js';
 import { isApiError, NotFoundError, ExamNotReadyError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
 import { listExams } from '../shared/repositories/exams.js';
-import { getExamById } from '../shared/repositories/exams.js';
-import { getCanonicalExam, getPresignedDownloadUrl } from '../shared/repositories/artifacts.js';
-import { requestExamGeneration, toCreatedExamResponse, RequestExamGeneration } from '../shared/services/examGeneration.js';
+import {
+  getCanonicalExam,
+  getPresignedDownloadUrl,
+  deleteArtifacts,
+} from '../shared/repositories/artifacts.js';
+import { getExamById, deleteExam } from '../shared/repositories/exams.js';
+import {
+  requestExamGeneration,
+  toCreatedExamResponse,
+  RequestExamGeneration,
+} from '../shared/services/examGeneration.js';
 import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
 const router = new Router();
@@ -108,7 +120,16 @@ router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
   return jsonResponse(200, { downloadUrl: url, expiresAt });
 });
 
-router.register('DELETE', '/v1/exams/{id}', async () => {
+router.register('DELETE', '/v1/exams/{id}', async (_event, params) => {
+  const exam = await loadExamOrThrow(params.id);
+
+  const s3Keys = [exam.s3KeyJson, exam.s3KeyPdf].filter((key): key is string => Boolean(key));
+  if (s3Keys.length > 0) {
+    await deleteArtifacts(s3Keys);
+  }
+
+  await deleteExam(params.id);
+
   return { statusCode: 204, body: '' };
 });
 
