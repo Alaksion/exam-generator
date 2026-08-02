@@ -1,12 +1,12 @@
 import { APIGatewayRequestAuthorizerEvent, APIGatewayAuthorizerResult } from 'aws-lambda';
 import { fetchExpectedKey } from './apiKey.js';
 
-export const handler = async (event: APIGatewayRequestAuthorizerEvent): Promise<APIGatewayAuthorizerResult> => {
+export const handler = async (event: APIGatewayRequestAuthorizerEvent): Promise<APIGatewayAuthorizerResult | 'Unauthorized'> => {
   const providedKey = event.headers?.['x-api-key'] ?? event.headers?.['X-Api-Key'] ?? '';
   const expectedKey = await fetchExpectedKey();
 
   if (!providedKey || providedKey !== expectedKey) {
-    throw new Error('Unauthorized');
+    return 'Unauthorized';
   }
 
   return generatePolicy('user', 'Allow', event.methodArn);

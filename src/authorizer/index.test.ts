@@ -36,6 +36,10 @@ describe('authorizer handler', () => {
   it('allows the request when the x-api-key header matches', async () => {
     const result = await handler(makeEvent({ 'x-api-key': 'secret-key' }));
 
+    if (typeof result === 'string') {
+      throw new Error('Expected authorizer policy, got Unauthorized');
+    }
+
     expect(result.principalId).toBe('user');
     expect(result.policyDocument.Statement).toHaveLength(1);
     expect(result.policyDocument.Statement[0]).toMatchObject({
@@ -46,10 +50,14 @@ describe('authorizer handler', () => {
   });
 
   it('rejects the request when the header is missing', async () => {
-    await expect(handler(makeEvent())).rejects.toThrow('Unauthorized');
+    const result = await handler(makeEvent());
+
+    expect(result).toBe('Unauthorized');
   });
 
   it('rejects the request when the header value is invalid', async () => {
-    await expect(handler(makeEvent({ 'x-api-key': 'wrong-key' }))).rejects.toThrow('Unauthorized');
+    const result = await handler(makeEvent({ 'x-api-key': 'wrong-key' }));
+
+    expect(result).toBe('Unauthorized');
   });
 });
