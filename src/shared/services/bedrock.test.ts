@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   renderPrompt,
+  buildQuestionPrompt,
   buildQuestionContexts,
   buildPromptContext,
   regenerateQuestion,
@@ -8,11 +9,13 @@ import {
   generateExamQuestions,
   allocateByWeight,
   allocateByDifficulty,
+  QUESTION_PROMPT_TEMPLATE,
   PromptContext,
   QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
 import { config } from '../config.js';
+import { buildQuestionFormatSpec } from './questionParser.js';
 import { Difficulty, KnowledgeDomain } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
@@ -32,6 +35,15 @@ function makeBedrockResponse(text: string): { body: Uint8Array } {
   };
 }
 
+const baseContext: PromptContext = {
+  questionNumber: 3,
+  difficulty: 'hard',
+  knowledgeDomain: 'Billing',
+  topic: 'Pricing',
+  certificationName: 'AWS Certified Cloud Practitioner',
+  certificationCode: 'CLF-C02',
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -39,31 +51,38 @@ beforeEach(() => {
 describe('renderPrompt', () => {
   it('replaces brace-style variables', () => {
     const template =
-      'Generate a {difficulty} question about {domain} for {certificationName} ({code}) question #{questionNumber}.';
-    const context: PromptContext = {
-      questionNumber: 1,
-      difficulty: 'medium',
-      domain: 'Cloud Concepts',
-      certificationName: 'AWS Certified Cloud Practitioner',
-      code: 'CLF-C02',
-    };
+      'Generate a {difficulty} question about {knowledgeDomain} ({topic}) for {certificationName} ({certificationCode}) #{questionNumber}.';
 
-    expect(renderPrompt(template, context)).toBe(
-      'Generate a medium question about Cloud Concepts for AWS Certified Cloud Practitioner (CLF-C02) question #1.',
+    expect(renderPrompt(template, baseContext)).toBe(
+      'Generate a hard question about Billing (Pricing) for AWS Certified Cloud Practitioner (CLF-C02) #3.',
     );
   });
 
   it('leaves unknown variables unchanged', () => {
     const template = 'Unknown {unknownVariable} and {difficulty}';
-    const context: PromptContext = {
-      questionNumber: 1,
-      difficulty: 'easy',
-      domain: 'Security',
-      certificationName: 'Test',
-      code: 'CODE',
-    };
 
-    expect(renderPrompt(template, context)).toBe('Unknown {unknownVariable} and easy');
+    expect(renderPrompt(template, baseContext)).toBe('Unknown {unknownVariable} and hard');
+  });
+});
+
+describe('QUESTION_PROMPT_TEMPLATE / buildQuestionPrompt', () => {
+  it('embeds a single centralized prompt constant', () => {
+    expect(typeof QUESTION_PROMPT_TEMPLATE).toBe('string');
+    expect(QUESTION_PROMPT_TEMPLATE.length).toBeGreaterThan(0);
+  });
+
+  it('renders the centralized prompt with all context keys and the derived JSON format', () => {
+    const prompt = buildQuestionPrompt(baseContext);
+
+    expect(prompt).toContain('AWS Certified Cloud Practitioner');
+    expect(prompt).toContain('CLF-C02');
+    expect(prompt).toContain('Billing');
+    expect(prompt).toContain('Pricing');
+    expect(prompt).toContain('hard');
+    expect(prompt).toContain('question number 3');
+    expect(prompt).toContain('strict JSON');
+    expect(prompt).toContain(buildQuestionFormatSpec());
+    expect(prompt).not.toContain('{certificationName}');
   });
 });
 
@@ -188,7 +207,7 @@ describe('buildQuestionContexts', () => {
 });
 
 describe('buildPromptContext', () => {
-  it('combines question attributes with certification metadata', () => {
+  it('combines question attributes with certification metadata including topic', () => {
     const attributes: QuestionAttributes = {
       number: 1,
       difficulty: 'medium',
@@ -203,15 +222,16 @@ describe('buildPromptContext', () => {
     expect(context).toEqual({
       questionNumber: 1,
       difficulty: 'medium',
-      domain: 'Cloud Concepts',
+      knowledgeDomain: 'Cloud Concepts',
+      topic: 'Amazon S3',
       certificationName: certification.name,
-      code: certification.code,
+      certificationCode: certification.code,
     });
   });
 });
 
 describe('regenerateQuestion', () => {
-  it('renders and invokes Bedrock for a single question', async () => {
+  it('uses the centralized prompt and the default model', async () => {
     sendMock.mockResolvedValue(makeBedrockResponse('retried question'));
 
     const attributes: QuestionAttributes = {
@@ -233,28 +253,16 @@ describe('regenerateQuestion', () => {
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
-    expect(requestBody.messages[0].content).toBe(
-      'Generate a easy question about Security for exam CLF-C02.',
-    );
+    expect(requestBody.messages[0].content).toContain('knowledge domain Security');
+    expect(requestBody.messages[0].content).toContain('topic IAM');
   });
 });
 
 describe('generateQuestionRaw', () => {
-  it('renders the prompt and returns the raw response text', async () => {
+  it('renders the centralized prompt and returns the raw response text', async () => {
     sendMock.mockResolvedValue(makeBedrockResponse('raw question text'));
 
-    const raw = await generateQuestionRaw(
-      config.bedrockModelDefault,
-      certification.config.promptTemplate,
-      {
-        questionNumber: 1,
-        difficulty: 'medium',
-        domain: 'Cloud Concepts',
-        certificationName: certification.name,
-        code: certification.code,
-      },
-      'corr-123',
-    );
+    const raw = await generateQuestionRaw(config.bedrockModelDefault, baseContext, 'corr-123');
 
     expect(raw).toBe('raw question text');
     expect(sendMock).toHaveBeenCalledTimes(1);
@@ -264,9 +272,9 @@ describe('generateQuestionRaw', () => {
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
-    expect(requestBody.messages[0].content).toBe(
-      'Generate a medium question about Cloud Concepts for exam CLF-C02.',
-    );
+    expect(requestBody.messages[0].content).toContain('Billing');
+    expect(requestBody.messages[0].content).toContain('Pricing');
+    expect(requestBody.messages[0].content).toContain(buildQuestionFormatSpec());
   });
 });
 

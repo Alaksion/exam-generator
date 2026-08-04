@@ -1,13 +1,15 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { Certification, Exam, Difficulty, DifficultyDistribution, KnowledgeDomain } from '../types.js';
 import { config } from '../config.js';
+import { buildQuestionFormatSpec } from './questionParser.js';
 
 export interface PromptContext {
   questionNumber: number;
   difficulty: Difficulty;
-  domain: string;
+  knowledgeDomain: string;
+  topic: string;
   certificationName: string;
-  code: string;
+  certificationCode: string;
 }
 
 export interface QuestionAttributes {
@@ -20,6 +22,23 @@ export interface QuestionAttributes {
 }
 
 const bedrockClient = new BedrockRuntimeClient({});
+
+export const QUESTION_PROMPT_TEMPLATE =
+  'You are preparing a practice question for the {certificationName} ({certificationCode}) certification. ' +
+  'Limit the scope of the question to the level of knowledge expected of a candidate sitting this certification. ' +
+  'Generate a single question scoped to the knowledge domain {knowledgeDomain} and topic {topic}. ' +
+  'The difficulty of the question must be {difficulty}. This is question number {questionNumber}. ' +
+  'Return ONLY a strict JSON object in the exact format specified below.';
+
+export function buildQuestionPrompt(context: PromptContext): string {
+  return `${QUESTION_PROMPT_TEMPLATE.replace(/\{(\w+)\}/g, (_match, key: string) => {
+    const value = context[key as keyof PromptContext];
+    return value !== undefined ? String(value) : _match;
+  })}
+
+Format:
+${buildQuestionFormatSpec()}`;
+}
 
 export function renderPrompt(template: string, context: PromptContext): string {
   return template.replace(/\{(\w+)\}/g, (_match, key: string) => {
@@ -130,9 +149,10 @@ export function buildPromptContext(
   return {
     questionNumber: context.number,
     difficulty: context.difficulty,
-    domain: context.domain,
+    knowledgeDomain: context.domain,
+    topic: context.topic,
     certificationName: certification.name,
-    code: certification.code,
+    certificationCode: certification.code,
   };
 }
 
@@ -143,7 +163,6 @@ export async function regenerateQuestion(
 ): Promise<string> {
   return generateQuestionRaw(
     config.bedrockModelDefault,
-    certification.config.promptTemplate,
     buildPromptContext(context, certification),
     correlationId,
   );
@@ -151,18 +170,18 @@ export async function regenerateQuestion(
 
 export async function generateQuestionRaw(
   modelId: string,
-  template: string,
   context: PromptContext,
   correlationId: string,
 ): Promise<string> {
-  const prompt = renderPrompt(template, context);
+  const prompt = buildQuestionPrompt(context);
 
   console.info('Rendering prompt for Bedrock', {
     correlationId,
     modelId,
     questionNumber: context.questionNumber,
     difficulty: context.difficulty,
-    domain: context.domain,
+    knowledgeDomain: context.knowledgeDomain,
+    topic: context.topic,
     prompt,
   });
 
@@ -198,14 +217,7 @@ export async function generateExamQuestions(
   for (const attribute of attributes) {
     const raw = await generateQuestionRaw(
       config.bedrockModelDefault,
-      certification.config.promptTemplate,
-      {
-        questionNumber: attribute.number,
-        difficulty: attribute.difficulty,
-        domain: attribute.domain,
-        certificationName: certification.name,
-        code: certification.code,
-      },
+      buildPromptContext(attribute, certification),
       correlationId,
     );
     rawResponses.push(raw);

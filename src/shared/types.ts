@@ -52,7 +52,6 @@ export const CertificationConfig = z
     questionCount: z.number().int().min(1).max(100),
     difficultyDistribution: DifficultyDistribution,
     domains: z.array(KnowledgeDomain).min(1),
-    promptTemplate: z.string().min(1),
   })
   .superRefine((config, ctx) => domainsSumTo100(config.domains, ctx));
 export type CertificationConfig = z.infer<typeof CertificationConfig>;
@@ -80,7 +79,6 @@ export const CertificationConfigInput = z
     questionCount: z.number().int().min(1).max(100),
     difficultyDistribution: DifficultyDistribution,
     domains: z.array(DomainInput).min(1),
-    promptTemplate: z.string().min(1),
   })
   .superRefine((config, ctx) => domainsSumTo100(config.domains, ctx));
 export type CertificationConfigInput = z.infer<typeof CertificationConfigInput>;

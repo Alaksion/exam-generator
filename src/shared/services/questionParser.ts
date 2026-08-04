@@ -30,6 +30,30 @@ export interface QuestionContext {
   topicId: string;
 }
 
+export function buildQuestionFormatSpec(): string {
+  const topLevelKeys = Object.keys(ParsedQuestionSchema.innerType().shape);
+  const example: Record<string, unknown> = {};
+
+  for (const key of topLevelKeys) {
+    if (key === 'text') {
+      example[key] = '<the question text>';
+    } else if (key === 'options') {
+      example[key] = [
+        { label: 'A', text: '<option text>', isCorrect: true },
+        { label: 'B', text: '<option text>', isCorrect: false },
+        { label: 'C', text: '<option text>', isCorrect: false },
+        { label: 'D', text: '<option text>', isCorrect: false },
+      ];
+    } else if (key === 'explanation') {
+      example[key] = '<explanation of the correct answer>';
+    } else if (key === 'reference') {
+      example[key] = '<optional link to official documentation>';
+    }
+  }
+
+  return JSON.stringify(example, null, 2);
+}
+
 export function parseQuestion(rawResponse: string, context: QuestionContext): Question | null {
   const parsed = extractJson(rawResponse);
   if (!parsed) {

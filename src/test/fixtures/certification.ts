@@ -14,7 +14,6 @@ export const certificationInput = {
       { name: 'Security', weight: 30, topics: ['IAM', 'Shared Responsibility'] },
       { name: 'Billing', weight: 20, topics: ['Pricing'] },
     ],
-    promptTemplate: 'Generate a {difficulty} question about {domain} for exam {code}.',
   },
 };
 
