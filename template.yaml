@@ -36,6 +36,8 @@ Globals:
     MemorySize: 1024
     Timeout: 30
     Tracing: Active
+    Layers:
+      - !Sub arn:aws:lambda:${AWS::Region}:580247275435:layer:LambdaInsightsExtension:21
     Environment:
       Variables:
         NODE_OPTIONS: --enable-source-maps
