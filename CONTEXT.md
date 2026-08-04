@@ -14,7 +14,9 @@ Authentication, pricing, analytics, and failure handling are explicitly out of s
 
 ## Glossary
 
-- **Certification** — A catalog entry describing an IT certification exam that can be generated. It holds the provider, exam code, human-readable name, version, and the configuration used by the generator.
+- **Certification** — A catalog entry describing an IT certification exam that can be generated. It holds the provider, exam code, human-readable name, and the configuration used by the generator.
+- **Knowledge Domain** — A weighted knowledge area within a certification, e.g. `Cloud Concepts`. Each domain carries a weight (percent) and a list of topics.
+- **Topic** — A subtopic attached to a knowledge domain, e.g. `Amazon S3`. Topics scope individual generated questions.
 - **Exam** — A generated, immutable practice exam. This is the primary artifact produced by the system.
 - **Question** — A single item inside an `Exam`. The MVP supports only single-answer multiple-choice questions.
 - **AnswerOption** — One possible answer for a `Question`. It carries a display label, the answer text, and a flag indicating whether it is the correct answer.
@@ -32,15 +34,13 @@ Core fields:
 - `provider` — certification provider: `aws`, `azure`, or `gcp`.
 - `code` — provider-specific exam code, e.g. `CLF-C02`.
 - `name` — human-readable name, e.g. `AWS Certified Cloud Practitioner`.
-- `version` — free-form version metadata, e.g. `v1`.
 - `description` — short description.
 - `isActive` — whether the certification appears in public listings.
 - `config` — generation configuration:
   - `questionCount` — number of questions per exam.
-  - `difficultyDistribution` — map of `easy`/`medium`/`hard` weights that must sum to `1.0`.
-  - `domains` — list of topics/domains the generator may draw from.
-  - `modelId` — Bedrock model identifier.
-  - `promptTemplate` — template string used to build prompts for the LLM.
+  - `difficultyDistribution` — map of `easy`/`medium`/`hard` integer percents that must sum to `100`. Global to the certification, applied within every knowledge domain.
+  - `domains` — list of weighted knowledge domains: `[{ id, name, weight, topics: [{ id, name }] }]`. Each `weight` is an integer percent; weights must sum to `100`. The `id`s are system-generated. Topics are scoped to their domain.
+  - The `modelId` and `promptTemplate` config fields are removed: the model is an application-level concern (global default) and prompt engineering is centralized in a single generator prompt.
 
 Lifecycle: created and updated through a public, API-key-protected endpoint. `provider` and `code` are immutable after creation. Deletion is not supported; set `isActive` to `false` instead.
 
@@ -90,7 +90,10 @@ A `Question` is part of exactly one `Exam`.
 
 - `id` — UUID.
 - `number` — 1-based position within the exam.
-- `domain` — topic tag, e.g. `Cloud Concepts`.
+- `domain` — knowledge domain name, e.g. `Cloud Concepts`.
+- `domainId` — id of the knowledge domain it was generated from.
+- `topic` — topic name, e.g. `Amazon S3`.
+- `topicId` — id of the topic it was generated from.
 - `difficulty` — `easy`, `medium`, or `hard`.
 - `text` — question prompt.
 - `options` — list of `AnswerOption` values.
@@ -108,7 +111,7 @@ An `AnswerOption`:
 
 ```json
 {
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "2.0.0",
   "id": "exam-uuid",
   "certificationId": "cert-uuid",
   "title": "AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00Z",
@@ -120,6 +123,9 @@ An `AnswerOption`:
       "id": "question-uuid",
       "number": 1,
       "domain": "Cloud Concepts",
+      "domainId": "dom-uuid",
+      "topic": "Amazon S3",
+      "topicId": "topic-uuid",
       "difficulty": "medium",
       "text": "Which AWS service provides object storage?",
       "options": [
