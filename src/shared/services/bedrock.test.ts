@@ -20,10 +20,20 @@ import { Difficulty, KnowledgeDomain } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 
-vi.mock('@aws-sdk/client-bedrock-runtime', () => ({
-  BedrockRuntimeClient: vi.fn(() => ({ send: sendMock })),
-  InvokeModelCommand: vi.fn((input: unknown) => input),
-}));
+vi.mock('@aws-sdk/client-bedrock-runtime', () => {
+  class MockBedrockRuntimeClient {
+    send = sendMock;
+  }
+  class MockInvokeModelCommand {
+    constructor(input: unknown) {
+      Object.assign(this, input);
+    }
+  }
+  return {
+    BedrockRuntimeClient: MockBedrockRuntimeClient,
+    InvokeModelCommand: MockInvokeModelCommand,
+  };
+});
 
 vi.mock('../config.js', () => ({
   config: { bedrockModelDefault: 'anthropic.claude-3-haiku-20240307-v1:0' },

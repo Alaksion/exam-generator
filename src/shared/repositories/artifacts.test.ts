@@ -7,15 +7,25 @@ import {
 } from './artifacts.js';
 
 const mockSend = vi.hoisted(() => vi.fn());
-const mockGetSignedUrl = vi.hoisted<Mock<[unknown, unknown, unknown], Promise<string>>>(() =>
-  vi.fn(),
-);
+const mockGetSignedUrl = vi.hoisted<
+  Mock<(client: unknown, command: unknown, options: unknown) => Promise<string>>
+>(() => vi.fn());
 
-vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: vi.fn(() => ({ send: mockSend })),
-  GetObjectCommand: vi.fn((input: unknown) => input),
-  DeleteObjectCommand: vi.fn((input: unknown) => input),
-}));
+vi.mock('@aws-sdk/client-s3', () => {
+  class MockS3Client {
+    send = mockSend;
+  }
+  class MockCommand {
+    constructor(input: unknown) {
+      Object.assign(this, input);
+    }
+  }
+  return {
+    S3Client: MockS3Client,
+    GetObjectCommand: MockCommand,
+    DeleteObjectCommand: MockCommand,
+  };
+});
 
 vi.mock('@aws-sdk/s3-request-presigner', () => ({
   getSignedUrl: vi.fn((client: unknown, command: unknown, options: unknown) =>

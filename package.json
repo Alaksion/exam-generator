@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "description": "Serverless backend for the mock-exam generator.",
   "private": true,
-  "type": "module",
   "license": "MIT",
   "engines": {
     "node": ">=22"

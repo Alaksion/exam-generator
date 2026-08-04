@@ -18,10 +18,15 @@ vi.mock('../shared/repositories/certifications.js', () => ({
   getCertificationById: vi.fn(),
 }));
 
-vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: vi.fn(() => ({ send: vi.fn() })),
-  PutObjectCommand: vi.fn((input: unknown) => input),
-}));
+vi.mock('@aws-sdk/client-s3', () => {
+  class MockS3Client {
+    send = vi.fn();
+  }
+  return {
+    S3Client: MockS3Client,
+    PutObjectCommand: vi.fn(),
+  };
+});
 
 vi.mock('../shared/services/bedrock.js', () => ({
   generateExamQuestions: vi.fn(),

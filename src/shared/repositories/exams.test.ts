@@ -1,24 +1,31 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { listExams } from './exams.js';
 
 const mockClient = vi.hoisted(() => ({
-  send: vi.fn() as unknown as Mock<[unknown], unknown>,
+  send: vi.fn(),
 }));
 
 vi.mock('@aws-sdk/client-dynamodb', () => ({
-  DynamoDBClient: vi.fn(() => ({})),
+  DynamoDBClient: class {},
 }));
 
-vi.mock('@aws-sdk/lib-dynamodb', () => ({
-  DynamoDBDocumentClient: {
-    from: vi.fn(() => mockClient),
-  },
-  GetCommand: vi.fn((input: unknown) => input),
-  PutCommand: vi.fn((input: unknown) => input),
-  QueryCommand: vi.fn((input: unknown) => input),
-  UpdateCommand: vi.fn((input: unknown) => input),
-  DeleteCommand: vi.fn((input: unknown) => input),
-}));
+vi.mock('@aws-sdk/lib-dynamodb', () => {
+  class MockCommand {
+    constructor(input: unknown) {
+      Object.assign(this, input);
+    }
+  }
+  return {
+    DynamoDBDocumentClient: {
+      from: vi.fn(() => mockClient),
+    },
+    GetCommand: MockCommand,
+    PutCommand: MockCommand,
+    QueryCommand: MockCommand,
+    UpdateCommand: MockCommand,
+    DeleteCommand: MockCommand,
+  };
+});
 
 const examBase = {
   certificationId: '11111111-1111-1111-1111-111111111111',

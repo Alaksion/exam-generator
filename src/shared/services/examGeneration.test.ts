@@ -18,10 +18,15 @@ vi.mock('../repositories/exams.js', () => ({
   createExam: vi.fn(),
 }));
 
-vi.mock('@aws-sdk/client-sqs', () => ({
-  SQSClient: vi.fn(() => ({ send: vi.fn() })),
-  SendMessageCommand: vi.fn((input: unknown) => input),
-}));
+vi.mock('@aws-sdk/client-sqs', () => {
+  class MockSQSClient {
+    send = vi.fn();
+  }
+  return {
+    SQSClient: MockSQSClient,
+    SendMessageCommand: vi.fn(),
+  };
+});
 
 describe('sendGeneratorMessage', () => {
   beforeEach(() => {

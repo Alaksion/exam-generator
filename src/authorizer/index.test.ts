@@ -30,7 +30,7 @@ function makeEvent(headers: Record<string, string> = {}): APIGatewayRequestAutho
 describe('authorizer handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedFetchExpectedKey.mockResolvedValue('secret-key');
+    mockedFetchExpectedKey.mockResolvedValue({ ok: true, key: 'secret-key' });
   });
 
   it('allows the request when the x-api-key header matches', async () => {

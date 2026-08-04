@@ -3,9 +3,13 @@ import { fetchExpectedKey } from './apiKey.js';
 
 export const handler = async (event: APIGatewayRequestAuthorizerEvent): Promise<APIGatewayAuthorizerResult | 'Unauthorized'> => {
   const providedKey = event.headers?.['x-api-key'] ?? event.headers?.['X-Api-Key'] ?? '';
-  const expectedKey = await fetchExpectedKey();
+  const result = await fetchExpectedKey();
 
-  if (!providedKey || providedKey !== expectedKey) {
+  if (!result.ok) {
+    return 'Unauthorized';
+  }
+
+  if (!providedKey || providedKey !== result.key) {
     return 'Unauthorized';
   }
 
