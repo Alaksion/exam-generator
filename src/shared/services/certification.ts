@@ -1,5 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Certification } from '../types.js';
+import { z } from 'zod';
+import {
+  Certification,
+  CertificationConfig,
+  CertificationConfigInput,
+  KnowledgeDomain,
+  Provider,
+} from '../types.js';
 import { ConflictError, InvalidRequestError, NotFoundError } from '../errors.js';
 import {
   createCertification as createCertificationRecord,
@@ -8,12 +15,57 @@ import {
   updateCertification as updateCertificationRecord,
 } from '../repositories/certifications.js';
 
-const CreateCertificationRequest = Certification.omit({ id: true });
-const UpdateCertificationRequest = Certification.omit({ id: true, provider: true, code: true });
+const CreateCertificationRequest = z.object({
+  provider: Provider,
+  code: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  isActive: z.boolean(),
+  config: CertificationConfigInput,
+});
+
+const UpdateCertificationRequest = z.object({
+  name: z.string().min(1),
+  description: z.string(),
+  isActive: z.boolean(),
+  config: CertificationConfigInput,
+});
+
 const IMMUTABLE_FIELDS = ['provider', 'code'] as const;
 
 export interface CertificationLookup {
   existsByProviderCode(provider: string, code: string): Promise<boolean>;
+}
+
+function withGeneratedDomainIds(
+  config: CertificationConfigInput,
+  existingDomains: KnowledgeDomain[] = [],
+): CertificationConfig {
+  const existingByName = new Map(existingDomains.map((domain) => [domain.name, domain]));
+
+  const domains: KnowledgeDomain[] = config.domains.map((input) => {
+    const existing = existingByName.get(input.name);
+    const existingTopicsByName = new Map(
+      existing ? existing.topics.map((topic) => [topic.name, topic]) : [],
+    );
+
+    return {
+      id: existing?.id ?? uuidv4(),
+      name: input.name,
+      weight: input.weight,
+      topics: input.topics.map((topicName) => {
+        const existingTopic = existingTopicsByName.get(topicName);
+        return existingTopic ?? { id: uuidv4(), name: topicName };
+      }),
+    };
+  });
+
+  return {
+    questionCount: config.questionCount,
+    difficultyDistribution: config.difficultyDistribution,
+    promptTemplate: config.promptTemplate,
+    domains,
+  };
 }
 
 export async function validateCertification(
@@ -33,7 +85,11 @@ export async function validateCertification(
 
 export async function createCertification(data: unknown): Promise<Certification> {
   const input = CreateCertificationRequest.parse(data);
-  const certification: Certification = { ...input, id: uuidv4() };
+  const certification: Certification = {
+    ...input,
+    id: uuidv4(),
+    config: withGeneratedDomainIds(input.config),
+  };
 
   const validated = await validateCertification(certification, {
     existsByProviderCode: async (provider, code) =>
@@ -59,8 +115,21 @@ export async function updateCertificationById(id: string, data: unknown): Promis
     throw new NotFoundError('Certification');
   }
 
-  await updateCertificationRecord(id, updates);
-  return { ...existing, ...updates, id, provider: existing.provider, code: existing.code };
+  const next: Certification = {
+    ...existing,
+    name: updates.name,
+    description: updates.description,
+    isActive: updates.isActive,
+    config: withGeneratedDomainIds(updates.config, existing.config.domains),
+  };
+
+  await updateCertificationRecord(id, {
+    name: next.name,
+    description: next.description,
+    isActive: next.isActive,
+    config: next.config,
+  });
+  return next;
 }
 
 export function toPublicCertification(

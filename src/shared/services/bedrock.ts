@@ -1,5 +1,6 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { Certification, Exam, Difficulty } from '../types.js';
+import { config } from '../config.js';
 
 export interface PromptContext {
   questionNumber: number;
@@ -27,8 +28,8 @@ export function renderPrompt(template: string, context: PromptContext): string {
 export function buildQuestionContexts(config: Certification['config']): QuestionAttributes[] {
   const { questionCount, difficultyDistribution, domains } = config;
 
-  const easyCount = Math.round(difficultyDistribution.easy * questionCount);
-  const mediumCount = Math.round(difficultyDistribution.medium * questionCount);
+  const easyCount = Math.round((difficultyDistribution.easy / 100) * questionCount);
+  const mediumCount = Math.round((difficultyDistribution.medium / 100) * questionCount);
   const hardCount = Math.max(0, questionCount - easyCount - mediumCount);
 
   const difficulties: Difficulty[] = [];
@@ -39,7 +40,7 @@ export function buildQuestionContexts(config: Certification['config']): Question
   return Array.from({ length: questionCount }, (_, index) => ({
     number: index + 1,
     difficulty: difficulties[index] ?? 'medium',
-    domain: domains[index % domains.length],
+    domain: domains[index % domains.length].name,
   }));
 }
 
@@ -62,7 +63,7 @@ export async function regenerateQuestion(
   correlationId: string,
 ): Promise<string> {
   return generateQuestionRaw(
-    certification.config.modelId,
+    config.bedrockModelDefault,
     certification.config.promptTemplate,
     buildPromptContext(context, certification),
     correlationId,
@@ -117,7 +118,7 @@ export async function generateExamQuestions(
 
   for (const attribute of attributes) {
     const raw = await generateQuestionRaw(
-      certification.config.modelId,
+      config.bedrockModelDefault,
       certification.config.promptTemplate,
       {
         questionNumber: attribute.number,

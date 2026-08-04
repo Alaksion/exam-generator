@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-const DIFFICULTY_SUM_TOLERANCE = 0.0001;
-
 export const Provider = z.enum(['aws', 'azure', 'gcp']);
 export type Provider = z.infer<typeof Provider>;
 
@@ -10,34 +8,82 @@ export type Difficulty = z.infer<typeof Difficulty>;
 
 export const DifficultyDistribution = z
   .object({
-    easy: z.number().min(0).max(1),
-    medium: z.number().min(0).max(1),
-    hard: z.number().min(0).max(1),
+    easy: z.number().int().min(0),
+    medium: z.number().int().min(0),
+    hard: z.number().int().min(0),
   })
-  .refine(
-    (dist) => Math.abs(dist.easy + dist.medium + dist.hard - 1) < DIFFICULTY_SUM_TOLERANCE,
-    () => ({ message: 'Difficulty weights must sum to 1.0' }),
-  );
+  .superRefine((dist, ctx) => {
+    if (dist.easy + dist.medium + dist.hard !== 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Difficulty weights must sum to 100',
+      });
+    }
+  });
+export type DifficultyDistribution = z.infer<typeof DifficultyDistribution>;
 
-export const CertificationConfig = z.object({
-  questionCount: z.number().int().min(1).max(100),
-  difficultyDistribution: DifficultyDistribution,
-  domains: z.array(z.string().min(1)).min(1),
-  modelId: z.string().min(1),
-  promptTemplate: z.string().min(1),
+export const Topic = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
 });
+export type Topic = z.infer<typeof Topic>;
+
+export const KnowledgeDomain = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1),
+  weight: z.number().int().min(1),
+  topics: z.array(Topic),
+});
+export type KnowledgeDomain = z.infer<typeof KnowledgeDomain>;
+
+function domainsSumTo100(domains: Array<{ weight: number }>, ctx: z.RefinementCtx): void {
+  const sum = domains.reduce((acc, domain) => acc + domain.weight, 0);
+  if (sum !== 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['domains'],
+      message: 'Domain weights must sum to 100',
+    });
+  }
+}
+
+export const CertificationConfig = z
+  .object({
+    questionCount: z.number().int().min(1).max(100),
+    difficultyDistribution: DifficultyDistribution,
+    domains: z.array(KnowledgeDomain).min(1),
+    promptTemplate: z.string().min(1),
+  })
+  .superRefine((config, ctx) => domainsSumTo100(config.domains, ctx));
+export type CertificationConfig = z.infer<typeof CertificationConfig>;
 
 export const Certification = z.object({
   id: z.string().uuid(),
   provider: Provider,
   code: z.string().min(1),
   name: z.string().min(1),
-  version: z.string().min(1),
   description: z.string(),
   isActive: z.boolean(),
   config: CertificationConfig,
 });
 export type Certification = z.infer<typeof Certification>;
+
+export const DomainInput = z.object({
+  name: z.string().min(1),
+  weight: z.number().int().min(1),
+  topics: z.array(z.string().min(1)),
+});
+export type DomainInput = z.infer<typeof DomainInput>;
+
+export const CertificationConfigInput = z
+  .object({
+    questionCount: z.number().int().min(1).max(100),
+    difficultyDistribution: DifficultyDistribution,
+    domains: z.array(DomainInput).min(1),
+    promptTemplate: z.string().min(1),
+  })
+  .superRefine((config, ctx) => domainsSumTo100(config.domains, ctx));
+export type CertificationConfigInput = z.infer<typeof CertificationConfigInput>;
 
 export const AnswerOption = z.object({
   id: z.string().uuid(),
