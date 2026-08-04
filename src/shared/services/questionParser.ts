@@ -25,6 +25,9 @@ export interface QuestionContext {
   number: number;
   difficulty: Difficulty;
   domain: string;
+  domainId: string;
+  topic: string;
+  topicId: string;
 }
 
 export function parseQuestion(rawResponse: string, context: QuestionContext): Question | null {
@@ -43,6 +46,9 @@ export function parseQuestion(rawResponse: string, context: QuestionContext): Qu
     id: uuidv4(),
     number: context.number,
     domain: context.domain,
+    domainId: context.domainId,
+    topic: context.topic,
+    topicId: context.topicId,
     difficulty: context.difficulty,
     text: question.text,
     options: question.options.map((option) => ({

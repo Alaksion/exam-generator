@@ -18,6 +18,9 @@ const exam: FullExam = {
       id: '33333333-3333-3333-3333-333333333333',
       number: 1,
       domain: 'Domain A',
+      domainId: '00000000-0000-4000-8000-00000000000a',
+      topic: 'Topic A',
+      topicId: '00000000-0000-4000-8000-00000000000b',
       difficulty: 'easy',
       text: 'What is the first question?',
       options: [
@@ -31,6 +34,9 @@ const exam: FullExam = {
       id: '66666666-6666-6666-6666-666666666666',
       number: 2,
       domain: 'Domain B',
+      domainId: '00000000-0000-4000-8000-00000000000c',
+      topic: 'Topic B',
+      topicId: '00000000-0000-4000-8000-00000000000d',
       difficulty: 'medium',
       text: 'What is the second question?',
       options: [

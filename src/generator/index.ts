@@ -10,7 +10,7 @@ import { parseExamQuestions } from '../shared/services/questionParser.js';
 
 import { renderExamPdf } from '../shared/services/pdfRenderer.js';
 
-export const CANONICAL_EXAM_SCHEMA_VERSION = '1.0.0';
+export const CANONICAL_EXAM_SCHEMA_VERSION = '2.0.0';
 
 const s3Client = new S3Client({});
 

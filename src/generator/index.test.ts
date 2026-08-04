@@ -91,6 +91,9 @@ const sampleQuestion = {
   id: 'question-1',
   number: 1,
   domain: 'Cloud Concepts',
+  domainId: '22222222-2222-2222-2222-222222222222',
+  topic: 'Amazon S3',
+  topicId: '33333333-3333-3333-3333-333333333333',
   difficulty: 'medium' as const,
   text: 'Which AWS service provides object storage?',
   options: [

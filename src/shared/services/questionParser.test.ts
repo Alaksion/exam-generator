@@ -27,7 +27,23 @@ const validRawQuestion = {
   reference: 'https://docs.aws.amazon.com/s3/',
 };
 
-const context = { number: 1, difficulty: 'medium' as const, domain: 'Cloud Concepts' };
+const context = {
+  number: 1,
+  difficulty: 'medium' as const,
+  domain: 'Cloud Concepts',
+  domainId: '22222222-2222-2222-2222-222222222222',
+  topic: 'Amazon S3',
+  topicId: '33333333-3333-3333-3333-333333333333',
+};
+
+const securityContext = {
+  number: 2,
+  difficulty: 'easy' as const,
+  domain: 'Security',
+  domainId: '55555555-5555-5555-5555-555555555555',
+  topic: 'IAM',
+  topicId: '66666666-6666-6666-6666-666666666666',
+};
 
 describe('ParsedQuestionSchema', () => {
   it('accepts a valid question', () => {
@@ -76,6 +92,9 @@ describe('parseQuestion', () => {
     expect(question?.text).toBe(validRawQuestion.text);
     expect(question?.number).toBe(context.number);
     expect(question?.domain).toBe(context.domain);
+    expect(question?.domainId).toBe(context.domainId);
+    expect(question?.topic).toBe(context.topic);
+    expect(question?.topicId).toBe(context.topicId);
     expect(question?.difficulty).toBe(context.difficulty);
     expect(question?.options).toHaveLength(4);
     expect(question?.options[0].isCorrect).toBe(true);
@@ -116,7 +135,7 @@ describe('parseExamQuestions', () => {
     const rawResponses = [JSON.stringify(validRawQuestion), 'invalid json'];
     const contexts = [
       context,
-      { number: 2, difficulty: 'easy' as const, domain: 'Security' },
+      securityContext,
     ];
 
     const questions = await parseExamQuestions(rawResponses, contexts, regenerate);
@@ -132,7 +151,7 @@ describe('parseExamQuestions', () => {
     const rawResponses = [JSON.stringify(validRawQuestion), 'invalid json'];
     const contexts = [
       context,
-      { number: 2, difficulty: 'easy' as const, domain: 'Security' },
+      securityContext,
     ];
 
     const questions = await parseExamQuestions(rawResponses, contexts, regenerate);
@@ -144,7 +163,7 @@ describe('parseExamQuestions', () => {
   it('returns null when contexts and responses length mismatch', async () => {
     const regenerate = vi.fn();
     const rawResponses = [JSON.stringify(validRawQuestion)];
-    const contexts = [context, { number: 2, difficulty: 'easy' as const, domain: 'Security' }];
+    const contexts = [context, securityContext];
 
     const questions = await parseExamQuestions(rawResponses, contexts, regenerate);
 

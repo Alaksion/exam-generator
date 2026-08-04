@@ -1,5 +1,5 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { Certification, Exam, Difficulty } from '../types.js';
+import { Certification, Exam, Difficulty, DifficultyDistribution, KnowledgeDomain } from '../types.js';
 import { config } from '../config.js';
 
 export interface PromptContext {
@@ -14,6 +14,9 @@ export interface QuestionAttributes {
   number: number;
   difficulty: Difficulty;
   domain: string;
+  domainId: string;
+  topic: string;
+  topicId: string;
 }
 
 const bedrockClient = new BedrockRuntimeClient({});
@@ -25,23 +28,99 @@ export function renderPrompt(template: string, context: PromptContext): string {
   });
 }
 
-export function buildQuestionContexts(config: Certification['config']): QuestionAttributes[] {
-  const { questionCount, difficultyDistribution, domains } = config;
+export function allocateByWeight(
+  questionCount: number,
+  domains: KnowledgeDomain[],
+): number[] {
+  const exact = domains.map((domain) => (domain.weight / 100) * questionCount);
+  const counts = exact.map(Math.floor);
+  const remaining = questionCount - counts.reduce((a, b) => a + b, 0);
 
-  const easyCount = Math.round((difficultyDistribution.easy / 100) * questionCount);
-  const mediumCount = Math.round((difficultyDistribution.medium / 100) * questionCount);
-  const hardCount = Math.max(0, questionCount - easyCount - mediumCount);
+  const order = domains
+    .map((_, index) => index)
+    .sort(
+      (a, b) => exact[b] - Math.floor(exact[b]) - (exact[a] - Math.floor(exact[a])),
+    );
 
-  const difficulties: Difficulty[] = [];
-  for (let i = 0; i < easyCount; i++) difficulties.push('easy');
-  for (let i = 0; i < mediumCount; i++) difficulties.push('medium');
-  for (let i = 0; i < hardCount; i++) difficulties.push('hard');
+  for (let i = 0; i < remaining && i < order.length; i++) {
+    counts[order[i]] += 1;
+  }
 
-  return Array.from({ length: questionCount }, (_, index) => ({
-    number: index + 1,
-    difficulty: difficulties[index] ?? 'medium',
-    domain: domains[index % domains.length].name,
-  }));
+  return counts;
+}
+
+export function allocateByDifficulty(
+  count: number,
+  distribution: DifficultyDistribution,
+): Record<Difficulty, number> {
+  const exact: Record<Difficulty, number> = {
+    easy: (distribution.easy / 100) * count,
+    medium: (distribution.medium / 100) * count,
+    hard: (distribution.hard / 100) * count,
+  };
+  const counts: Record<Difficulty, number> = {
+    easy: Math.floor(exact.easy),
+    medium: Math.floor(exact.medium),
+    hard: Math.floor(exact.hard),
+  };
+  const remaining = count - (counts.easy + counts.medium + counts.hard);
+
+  const order: Difficulty[] = (['easy', 'medium', 'hard'] as Difficulty[]).sort(
+    (a, b) => exact[b] - Math.floor(exact[b]) - (exact[a] - Math.floor(exact[a])),
+  );
+
+  for (let i = 0; i < remaining && i < order.length; i++) {
+    counts[order[i]] += 1;
+  }
+
+  return counts;
+}
+
+function shuffle<T>(items: T[], random: () => number): T[] {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+export function buildQuestionContexts(
+  config: Certification['config'],
+  random: () => number = Math.random,
+): QuestionAttributes[] {
+  const domainCounts = allocateByWeight(config.questionCount, config.domains);
+  const attributes: QuestionAttributes[] = [];
+  let number = 1;
+
+  config.domains.forEach((domain, index) => {
+    const count = domainCounts[index];
+    if (count === 0) {
+      return;
+    }
+
+    const difficultyCounts = allocateByDifficulty(count, config.difficultyDistribution);
+    const difficulties: Difficulty[] = [
+      ...Array.from({ length: difficultyCounts.easy }, () => 'easy' as Difficulty),
+      ...Array.from({ length: difficultyCounts.medium }, () => 'medium' as Difficulty),
+      ...Array.from({ length: difficultyCounts.hard }, () => 'hard' as Difficulty),
+    ];
+    const shuffledTopics = shuffle(domain.topics, random);
+
+    for (let slot = 0; slot < count; slot++) {
+      const topic = shuffledTopics[slot % shuffledTopics.length];
+      attributes.push({
+        number: number++,
+        difficulty: difficulties[slot],
+        domain: domain.name,
+        domainId: domain.id,
+        topic: topic.name,
+        topicId: topic.id,
+      });
+    }
+  });
+
+  return attributes;
 }
 
 export function buildPromptContext(
