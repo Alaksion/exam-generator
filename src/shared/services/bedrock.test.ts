@@ -10,6 +10,8 @@ import {
   QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
+import { config } from '../config.js';
+import { KnowledgeDomain } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 
@@ -18,11 +20,42 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => ({
   InvokeModelCommand: vi.fn((input: unknown) => input),
 }));
 
+vi.mock('../config.js', () => ({
+  config: { bedrockModelDefault: 'anthropic.claude-3-haiku-20240307-v1:0' },
+}));
+
 function makeBedrockResponse(text: string): { body: Uint8Array } {
   return {
     body: Uint8Array.from(Buffer.from(JSON.stringify({ content: [{ type: 'text', text }] }))),
   };
 }
+
+const structuredDomains: KnowledgeDomain[] = [
+  {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    name: 'Cloud Concepts',
+    weight: 60,
+    topics: [{ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Amazon S3' }],
+  },
+  {
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    name: 'Security',
+    weight: 25,
+    topics: [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'IAM' }],
+  },
+  {
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    name: 'Billing',
+    weight: 15,
+    topics: [{ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', name: 'Pricing' }],
+  },
+];
+
+const multiDomainConfig = {
+  ...certification.config,
+  difficultyDistribution: { easy: 20, medium: 50, hard: 30 },
+  domains: structuredDomains,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -64,9 +97,10 @@ describe('buildQuestionContexts', () => {
     const attributes = buildQuestionContexts(certification.config);
 
     expect(attributes).toHaveLength(certification.config.questionCount);
+    const domainNames = certification.config.domains.map((d) => d.name);
     attributes.forEach((attr, index) => {
       expect(attr.number).toBe(index + 1);
-      expect(certification.config.domains).toContain(attr.domain);
+      expect(domainNames).toContain(attr.domain);
     });
 
     const easyCount = attributes.filter((attr) => attr.difficulty === 'easy').length;
@@ -77,12 +111,7 @@ describe('buildQuestionContexts', () => {
   });
 
   it('cycles through multiple domains', () => {
-    const config = {
-      ...certification.config,
-      domains: ['Cloud Concepts', 'Security', 'Billing'],
-    };
-
-    const attributes = buildQuestionContexts(config);
+    const attributes = buildQuestionContexts(multiDomainConfig);
 
     expect(attributes[0].domain).toBe('Cloud Concepts');
     expect(attributes[1].domain).toBe('Security');
@@ -128,7 +157,7 @@ describe('regenerateQuestion', () => {
 
     const calls = sendMock.mock.calls as Array<[unknown]>;
     const commandInput = calls[0][0] as { modelId: string; body: Buffer };
-    expect(commandInput.modelId).toBe(certification.config.modelId);
+    expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
     expect(requestBody.messages[0].content).toBe(
@@ -142,7 +171,7 @@ describe('generateQuestionRaw', () => {
     sendMock.mockResolvedValue(makeBedrockResponse('raw question text'));
 
     const raw = await generateQuestionRaw(
-      certification.config.modelId,
+      config.bedrockModelDefault,
       certification.config.promptTemplate,
       {
         questionNumber: 1,
@@ -159,7 +188,7 @@ describe('generateQuestionRaw', () => {
 
     const calls = sendMock.mock.calls as Array<[unknown]>;
     const commandInput = calls[0][0] as { modelId: string; body: Buffer };
-    expect(commandInput.modelId).toBe(certification.config.modelId);
+    expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
     expect(requestBody.messages[0].content).toBe(
