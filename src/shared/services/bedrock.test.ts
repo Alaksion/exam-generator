@@ -6,12 +6,14 @@ import {
   regenerateQuestion,
   generateQuestionRaw,
   generateExamQuestions,
+  allocateByWeight,
+  allocateByDifficulty,
   PromptContext,
   QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
 import { config } from '../config.js';
-import { KnowledgeDomain } from '../types.js';
+import { Difficulty, KnowledgeDomain } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 
@@ -29,33 +31,6 @@ function makeBedrockResponse(text: string): { body: Uint8Array } {
     body: Uint8Array.from(Buffer.from(JSON.stringify({ content: [{ type: 'text', text }] }))),
   };
 }
-
-const structuredDomains: KnowledgeDomain[] = [
-  {
-    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    name: 'Cloud Concepts',
-    weight: 60,
-    topics: [{ id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Amazon S3' }],
-  },
-  {
-    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-    name: 'Security',
-    weight: 25,
-    topics: [{ id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'IAM' }],
-  },
-  {
-    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
-    name: 'Billing',
-    weight: 15,
-    topics: [{ id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', name: 'Pricing' }],
-  },
-];
-
-const multiDomainConfig = {
-  ...certification.config,
-  difficultyDistribution: { easy: 20, medium: 50, hard: 30 },
-  domains: structuredDomains,
-};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -92,31 +67,123 @@ describe('renderPrompt', () => {
   });
 });
 
+describe('allocateByWeight', () => {
+  it('distributes a value across weights summing exactly to the total', () => {
+    const domains: KnowledgeDomain[] = [
+      { id: 'a', name: 'A', weight: 50, topics: [] },
+      { id: 'b', name: 'B', weight: 30, topics: [] },
+      { id: 'c', name: 'C', weight: 20, topics: [] },
+    ] as KnowledgeDomain[];
+
+    const counts = allocateByWeight(10, domains);
+
+    expect(counts).toEqual([5, 3, 2]);
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(10);
+  });
+
+  it('awards the leftover to the domain with the largest fractional remainder', () => {
+    const domains: KnowledgeDomain[] = [
+      { id: 'a', name: 'A', weight: 50, topics: [] },
+      { id: 'b', name: 'B', weight: 30, topics: [] },
+      { id: 'c', name: 'C', weight: 20, topics: [] },
+    ] as KnowledgeDomain[];
+
+    const counts = allocateByWeight(2, domains);
+
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(2);
+    expect(counts).toEqual([1, 1, 0]);
+  });
+});
+
+describe('allocateByDifficulty', () => {
+  it('apportions a count across difficulties summing exactly to the count', () => {
+    const counts = allocateByDifficulty(10, { easy: 20, medium: 50, hard: 30 });
+
+    expect(counts.easy + counts.medium + counts.hard).toBe(10);
+    expect(counts.easy).toBe(2);
+    expect(counts.medium).toBe(5);
+    expect(counts.hard).toBe(3);
+  });
+});
+
 describe('buildQuestionContexts', () => {
-  it('distributes difficulty and domains across questions', () => {
+  it('returns one context per question with sequential numbering', () => {
     const attributes = buildQuestionContexts(certification.config);
 
     expect(attributes).toHaveLength(certification.config.questionCount);
-    const domainNames = certification.config.domains.map((d) => d.name);
     attributes.forEach((attr, index) => {
       expect(attr.number).toBe(index + 1);
-      expect(domainNames).toContain(attr.domain);
     });
-
-    const easyCount = attributes.filter((attr) => attr.difficulty === 'easy').length;
-    const mediumCount = attributes.filter((attr) => attr.difficulty === 'medium').length;
-    const hardCount = attributes.filter((attr) => attr.difficulty === 'hard').length;
-
-    expect(easyCount + mediumCount + hardCount).toBe(certification.config.questionCount);
   });
 
-  it('cycles through multiple domains', () => {
-    const attributes = buildQuestionContexts(multiDomainConfig);
+  it('allocates questions across domains by weight', () => {
+    const attributes = buildQuestionContexts(certification.config);
+    const byDomain = attributes.reduce<Record<string, number>>((acc, attr) => {
+      acc[attr.domain] = (acc[attr.domain] ?? 0) + 1;
+      return acc;
+    }, {});
 
-    expect(attributes[0].domain).toBe('Cloud Concepts');
-    expect(attributes[1].domain).toBe('Security');
-    expect(attributes[2].domain).toBe('Billing');
-    expect(attributes[3].domain).toBe('Cloud Concepts');
+    expect(byDomain['Cloud Concepts']).toBe(5);
+    expect(byDomain['Security']).toBe(3);
+    expect(byDomain['Billing']).toBe(2);
+  });
+
+  it('apportions difficulty across all questions', () => {
+    const attributes = buildQuestionContexts(certification.config);
+    const byDifficulty = attributes.reduce<Record<Difficulty, number>>(
+      (acc, attr) => {
+        acc[attr.difficulty] += 1;
+        return acc;
+      },
+      { easy: 0, medium: 0, hard: 0 },
+    );
+
+    expect(byDifficulty.easy + byDifficulty.medium + byDifficulty.hard).toBe(
+      certification.config.questionCount,
+    );
+    expect(byDifficulty.easy).toBe(2);
+    expect(byDifficulty.medium).toBe(5);
+    expect(byDifficulty.hard).toBe(3);
+  });
+
+  it('assigns domain and topic provenance scoped to each domain', () => {
+    const attributes = buildQuestionContexts(certification.config);
+    const domainById = new Map(certification.config.domains.map((d) => [d.id, d]));
+
+    for (const attr of attributes) {
+      const domain = domainById.get(attr.domainId);
+      expect(domain).toBeDefined();
+      expect(attr.domain).toBe(domain!.name);
+      expect(domain!.topics.some((t) => t.name === attr.topic && t.id === attr.topicId)).toBe(true);
+    }
+  });
+
+  it('selects topics without replacement per domain, cycling when count exceeds topics', () => {
+    const attributes = buildQuestionContexts(certification.config);
+    const cloud = attributes.filter((attr) => attr.domain === 'Cloud Concepts');
+
+    expect(cloud).toHaveLength(5);
+    expect(cloud[0].topicId).not.toBe(cloud[1].topicId);
+    expect(cloud[2].topicId).toBe(cloud[0].topicId);
+    expect(cloud[3].topicId).toBe(cloud[1].topicId);
+    expect(cloud[4].topicId).toBe(cloud[0].topicId);
+  });
+
+  it('gives a low-weight domain zero questions when sparsely allocated', () => {
+    const attributes = buildQuestionContexts({
+      ...certification.config,
+      questionCount: 2,
+    });
+
+    const byDomain = attributes.reduce<Record<string, number>>((acc, attr) => {
+      acc[attr.domain] = (acc[attr.domain] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    expect(attributes).toHaveLength(2);
+    expect(byDomain['Billing'] ?? 0).toBe(0);
+    expect(byDomain['Cloud Concepts'] ?? 0).toBe(1);
+    expect(byDomain['Security'] ?? 0).toBe(1);
   });
 });
 
@@ -126,6 +193,9 @@ describe('buildPromptContext', () => {
       number: 1,
       difficulty: 'medium',
       domain: 'Cloud Concepts',
+      domainId: '22222222-2222-2222-2222-222222222222',
+      topic: 'Amazon S3',
+      topicId: '33333333-3333-3333-3333-333333333333',
     };
 
     const context = buildPromptContext(attributes, certification);
@@ -148,6 +218,9 @@ describe('regenerateQuestion', () => {
       number: 2,
       difficulty: 'easy',
       domain: 'Security',
+      domainId: '55555555-5555-5555-5555-555555555555',
+      topic: 'IAM',
+      topicId: '66666666-6666-6666-6666-666666666666',
     };
 
     const raw = await regenerateQuestion(attributes, certification, 'corr-retry');
