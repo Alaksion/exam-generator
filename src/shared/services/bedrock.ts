@@ -31,10 +31,7 @@ export const QUESTION_PROMPT_TEMPLATE =
   'Return ONLY a strict JSON object in the exact format specified below.';
 
 export function buildQuestionPrompt(context: PromptContext): string {
-  return `${QUESTION_PROMPT_TEMPLATE.replace(/\{(\w+)\}/g, (_match, key: string) => {
-    const value = context[key as keyof PromptContext];
-    return value !== undefined ? String(value) : _match;
-  })}
+  return `${renderPrompt(QUESTION_PROMPT_TEMPLATE, context)}
 
 Format:
 ${buildQuestionFormatSpec()}`;

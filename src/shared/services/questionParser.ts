@@ -31,7 +31,9 @@ export interface QuestionContext {
 }
 
 export function buildQuestionFormatSpec(): string {
-  const topLevelKeys = Object.keys(ParsedQuestionSchema.innerType().shape);
+  const inner = ParsedQuestionSchema.innerType();
+  const topLevelKeys = Object.keys(inner.shape);
+  const optionKeys = Object.keys(inner.shape.options.element.shape);
   const example: Record<string, unknown> = {};
 
   for (const key of topLevelKeys) {
@@ -39,10 +41,10 @@ export function buildQuestionFormatSpec(): string {
       example[key] = '<the question text>';
     } else if (key === 'options') {
       example[key] = [
-        { label: 'A', text: '<option text>', isCorrect: true },
-        { label: 'B', text: '<option text>', isCorrect: false },
-        { label: 'C', text: '<option text>', isCorrect: false },
-        { label: 'D', text: '<option text>', isCorrect: false },
+        buildOptionExample(optionKeys, true),
+        buildOptionExample(optionKeys, false),
+        buildOptionExample(optionKeys, false),
+        buildOptionExample(optionKeys, false),
       ];
     } else if (key === 'explanation') {
       example[key] = '<explanation of the correct answer>';
@@ -52,6 +54,20 @@ export function buildQuestionFormatSpec(): string {
   }
 
   return JSON.stringify(example, null, 2);
+}
+
+function buildOptionExample(keys: string[], isCorrect: boolean): Record<string, unknown> {
+  const option: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (key === 'label') {
+      option[key] = 'A';
+    } else if (key === 'text') {
+      option[key] = '<option text>';
+    } else if (key === 'isCorrect') {
+      option[key] = isCorrect;
+    }
+  }
+  return option;
 }
 
 export function parseQuestion(rawResponse: string, context: QuestionContext): Question | null {

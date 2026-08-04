@@ -107,6 +107,16 @@ describe('buildQuestionFormatSpec', () => {
 
     expect(Object.keys(parsed).sort()).toEqual(schemaFields.slice().sort());
   });
+
+  it('derives the option field set from the option schema element', () => {
+    const spec = buildQuestionFormatSpec();
+    const parsed = JSON.parse(spec) as { options: Array<Record<string, unknown>> };
+    const optionSchemaFields = Object.keys(
+      ParsedQuestionSchema.innerType().shape.options.element.shape,
+    );
+
+    expect(Object.keys(parsed.options[0]).sort()).toEqual(optionSchemaFields.slice().sort());
+  });
 });
 
 describe('parseQuestion', () => {
