@@ -63,7 +63,6 @@ function withGeneratedDomainIds(
   return {
     questionCount: config.questionCount,
     difficultyDistribution: config.difficultyDistribution,
-    promptTemplate: config.promptTemplate,
     domains,
   };
 }
@@ -132,15 +131,6 @@ export async function updateCertificationById(id: string, data: unknown): Promis
   return next;
 }
 
-export function toPublicCertification(
-  certification: Certification,
-): Omit<Certification, 'config'> & {
-  config: Omit<Certification['config'], 'promptTemplate'>;
-} {
-  const { config: certConfig, ...rest } = certification;
-  const { promptTemplate: _promptTemplate, ...publicConfig } = certConfig;
-  return {
-    ...rest,
-    config: publicConfig,
-  };
+export function toPublicCertification(certification: Certification): Certification {
+  return certification;
 }

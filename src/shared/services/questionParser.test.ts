@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { parseQuestion, parseExamQuestions, ParsedQuestionSchema } from './questionParser.js';
+import {
+  parseQuestion,
+  parseExamQuestions,
+  ParsedQuestionSchema,
+  buildQuestionFormatSpec,
+} from './questionParser.js';
 
 let uuidCounter = 0;
 
@@ -80,6 +85,37 @@ describe('ParsedQuestionSchema', () => {
       options: [{ ...validRawQuestion.options[0], label: '' }],
     };
     expect(ParsedQuestionSchema.safeParse(invalid).success).toBe(false);
+  });
+});
+
+describe('buildQuestionFormatSpec', () => {
+  it('produces valid JSON describing the parsed question schema', () => {
+    const spec = buildQuestionFormatSpec();
+
+    const parsed = JSON.parse(spec) as Record<string, unknown>;
+    expect(parsed.text).toBeDefined();
+    expect(parsed.options).toBeInstanceOf(Array);
+    expect((parsed.options as Array<{ isCorrect: boolean }>).filter((o) => o.isCorrect)).toHaveLength(1);
+    expect(parsed.explanation).toBeDefined();
+    expect(parsed.reference).toBeDefined();
+  });
+
+  it('shares its field set with the parsing schema', () => {
+    const spec = buildQuestionFormatSpec();
+    const parsed = JSON.parse(spec) as Record<string, unknown>;
+    const schemaFields = Object.keys(ParsedQuestionSchema.innerType().shape);
+
+    expect(Object.keys(parsed).sort()).toEqual(schemaFields.slice().sort());
+  });
+
+  it('derives the option field set from the option schema element', () => {
+    const spec = buildQuestionFormatSpec();
+    const parsed = JSON.parse(spec) as { options: Array<Record<string, unknown>> };
+    const optionSchemaFields = Object.keys(
+      ParsedQuestionSchema.innerType().shape.options.element.shape,
+    );
+
+    expect(Object.keys(parsed.options[0]).sort()).toEqual(optionSchemaFields.slice().sort());
   });
 });
 

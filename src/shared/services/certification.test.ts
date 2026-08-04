@@ -162,20 +162,6 @@ describe('validateCertification', () => {
       ),
     ).rejects.toThrow(z.ZodError);
   });
-
-  it('throws when promptTemplate is empty', async () => {
-    const { lookup } = makeLookup(false);
-
-    await expect(
-      validateCertification(
-        {
-          ...certification,
-          config: { ...certification.config, promptTemplate: '' },
-        },
-        lookup,
-      ),
-    ).rejects.toThrow(z.ZodError);
-  });
 });
 
 describe('createCertification', () => {
