@@ -67,7 +67,6 @@ Resources:
         MaxAge: "'600'"
       Auth:
         DefaultAuthorizer: ApiKeyAuthorizer
-        ApiKeyRequired: true
         Authorizers:
           ApiKeyAuthorizer:
             FunctionArn: !GetAtt ApiKeyAuthorizerFunction.Arn
@@ -114,81 +113,47 @@ Resources:
       Value: !Ref ApiKeyValue
       Description: API key used by the x-api-key authorizer.
 
-  PublicApiUsagePlan:
-    Type: AWS::ApiGateway::UsagePlan
-    Properties:
-      UsagePlanName: !Sub ${AWS::StackName}-public-api-usage-plan
-      Description: Throttling limits for the public API.
-      ApiStages:
-        - ApiId: !Ref PublicApi
-          Stage: !Ref Environment
-          Throttle:
-            '/*':
-              RateLimit: !Ref ApiThrottleRateLimit
-              BurstLimit: !Ref ApiThrottleBurstLimit
-      Tags:
-        - Key: Project
-          Value: exam-generator
+  # PublicApiWafAcl:
+  #   Type: AWS::WAFv2::WebACL
+  #   Properties:
+  #     Name: !Sub ${AWS::StackName}-public-api-waf
+  #     Description: Rate-based protection for the public API.
+  #     Scope: REGIONAL
+  #     DefaultAction:
+  #       Allow: {}
+  #     CustomResponseBodies:
+  #       RateLimitExceeded:
+  #         ContentType: APPLICATION_JSON
+  #         Content: '{"error":"RateLimitExceeded","message":"Too many requests from this IP. Please slow down."}'
+  #     VisibilityConfig:
+  #       SampledRequestsEnabled: true
+  #       CloudWatchMetricsEnabled: true
+  #       MetricName: !Sub ${AWS::StackName}-public-api-waf
+  #     Rules:
+  #       - Name: RateLimitRule
+  #         Priority: 1
+  #         Statement:
+  #           RateBasedStatement:
+  #             Limit: !Ref WafRateLimit
+  #             AggregateKeyType: IP
+  #         Action:
+  #           Block:
+  #             CustomResponse:
+  #               ResponseCode: 429
+  #               CustomResponseBodyKey: RateLimitExceeded
+  #         VisibilityConfig:
+  #           SampledRequestsEnabled: true
+  #           CloudWatchMetricsEnabled: true
+  #           MetricName: !Sub ${AWS::StackName}-public-api-waf-rate-limit
+  #     Tags:
+  #       - Key: Project
+  #         Value: exam-generator
 
-  PublicApiKey:
-    Type: AWS::ApiGateway::ApiKey
-    Properties:
-      Name: !Sub ${AWS::StackName}-public-api-key
-      Description: API key linked to the public API usage plan.
-      Enabled: true
-      Value: !Ref ApiKeyValue
-      Tags:
-        - Key: Project
-          Value: exam-generator
-
-  PublicApiUsagePlanKey:
-    Type: AWS::ApiGateway::UsagePlanKey
-    Properties:
-      KeyType: API_KEY
-      KeyId: !Ref PublicApiKey
-      UsagePlanId: !Ref PublicApiUsagePlan
-
-  PublicApiWafAcl:
-    Type: AWS::WAFv2::WebACL
-    Properties:
-      Name: !Sub ${AWS::StackName}-public-api-waf
-      Description: Rate-based protection for the public API.
-      Scope: REGIONAL
-      DefaultAction:
-        Allow: {}
-      CustomResponseBodies:
-        RateLimitExceeded:
-          ContentType: APPLICATION_JSON
-          Content: '{"error":"RateLimitExceeded","message":"Too many requests from this IP. Please slow down."}'
-      VisibilityConfig:
-        SampledRequestsEnabled: true
-        CloudWatchMetricsEnabled: true
-        MetricName: !Sub ${AWS::StackName}-public-api-waf
-      Rules:
-        - Name: RateLimitRule
-          Priority: 1
-          Statement:
-            RateBasedStatement:
-              Limit: !Ref WafRateLimit
-              AggregateKeyType: IP
-          Action:
-            Block:
-              CustomResponse:
-                ResponseCode: 429
-                CustomResponseBodyKey: RateLimitExceeded
-          VisibilityConfig:
-            SampledRequestsEnabled: true
-            CloudWatchMetricsEnabled: true
-            MetricName: !Sub ${AWS::StackName}-public-api-waf-rate-limit
-      Tags:
-        - Key: Project
-          Value: exam-generator
-
-  PublicApiWafAssociation:
-    Type: AWS::WAFv2::WebACLAssociation
-    Properties:
-      ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${PublicApi}/stages/${Environment}
-      WebACLArn: !GetAtt PublicApiWafAcl.Arn
+  # PublicApiWafAssociation:
+  #   Type: AWS::WAFv2::WebACLAssociation
+  #   Properties:
+  #     ResourceArn: !Sub arn:aws:apigateway:${AWS::Region}::/restapis/${PublicApi}/stages/${Environment}
+  #     WebACLArn: !GetAtt PublicApiWafAcl.Arn
 
   ApiFunction:
     Type: AWS::Serverless::Function
