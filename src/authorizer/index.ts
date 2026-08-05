@@ -1,22 +1,36 @@
 import { APIGatewayRequestAuthorizerEvent, APIGatewayAuthorizerResult } from 'aws-lambda';
 import { fetchExpectedKey } from './apiKey.js';
 
-export const handler = async (event: APIGatewayRequestAuthorizerEvent): Promise<APIGatewayAuthorizerResult | 'Unauthorized'> => {
+export const handler = async (
+  event: APIGatewayRequestAuthorizerEvent,
+): Promise<APIGatewayAuthorizerResult> => {
+  console.log('Authorizer event:', JSON.stringify(event, null, 2));
   const providedKey = event.headers?.['x-api-key'] ?? event.headers?.['X-Api-Key'] ?? '';
+  if (!providedKey) {
+    throw new Error('Unauthorized');
+  }
+
   const result = await fetchExpectedKey();
 
   if (!result.ok) {
-    return 'Unauthorized';
+    console.error('Error fetching expected API key:', result.error);
+    throw new Error('Unauthorized');
   }
 
-  if (!providedKey || providedKey !== result.key) {
-    return 'Unauthorized';
+  if (providedKey !== result.key) {
+    console.error('Error fetching expected API key:', "provided key missing or doesn't match");
+    throw new Error('Unauthorized');
   }
 
+  console.log('API key validated successfully.');
   return generatePolicy('user', 'Allow', event.methodArn);
 };
 
-function generatePolicy(principalId: string, effect: 'Allow' | 'Deny', resource: string): APIGatewayAuthorizerResult {
+function generatePolicy(
+  principalId: string,
+  effect: 'Allow' | 'Deny',
+  resource: string,
+): APIGatewayAuthorizerResult {
   return {
     principalId,
     policyDocument: {
