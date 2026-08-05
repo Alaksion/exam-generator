@@ -1,4 +1,4 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody } from '../shared/router.js';
 import {
@@ -25,6 +25,7 @@ import { Exam, Provider, ExamStatus } from '../shared/types.js';
 const router = new Router();
 
 router.register('GET', '/v1/health', async () => {
+  console.log('Health check endpoint called.');
   return jsonResponse(200, { status: 'ok' });
 });
 
@@ -68,7 +69,7 @@ router.register('GET', '/v1/exams', async (event) => {
       limit: z.coerce.number().int().min(1).max(100).default(20),
       cursor: z.string().min(1).optional(),
     })
-    .parse(Object.fromEntries(new URLSearchParams(event.rawQueryString)));
+    .parse(Object.fromEntries(new URLSearchParams(event.queryStringParameters as Record<string, string> | undefined ?? {})));
 
   const { exams, nextCursor } = await listExams(query);
 
@@ -133,7 +134,7 @@ router.register('DELETE', '/v1/exams/{id}', async (_event, params) => {
   return { statusCode: 204, body: '' };
 });
 
-function mapErrorToResponse(error: unknown): APIGatewayProxyResultV2 {
+function mapErrorToResponse(error: unknown): APIGatewayProxyResult {
   if (isApiError(error)) {
     return jsonResponse(error.statusCode, error.toResponse());
   }
@@ -149,7 +150,7 @@ function mapErrorToResponse(error: unknown): APIGatewayProxyResultV2 {
   return jsonResponse(500, { error: 'InternalError', message: 'An internal error occurred.' });
 }
 
-export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
     const result = await router.route(event);
     return result ?? notFound();

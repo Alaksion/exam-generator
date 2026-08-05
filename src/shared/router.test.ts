@@ -1,27 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { APIGatewayProxyEventV2 } from 'aws-lambda';
+import { APIGatewayProxyEvent } from 'aws-lambda';
 import { Router, jsonResponse, notFound } from './router.js';
 
-function makeEvent(method: string, path: string): APIGatewayProxyEventV2 {
+function makeEvent(method: string, path: string): APIGatewayProxyEvent {
   return {
-    version: '2.0',
-    routeKey: `${method} ${path}`,
-    rawPath: path,
-    rawQueryString: '',
+    httpMethod: method,
+    path,
     headers: {},
-    requestContext: {
-      accountId: '123456789',
-      apiId: 'api',
-      domainName: 'localhost',
-      domainPrefix: 'localhost',
-      http: { method, path, protocol: 'HTTP/1.1', sourceIp: '127.0.0.1', userAgent: 'test' },
-      requestId: 'req-1',
-      routeKey: `${method} ${path}`,
-      stage: 'test',
-      time: '01/Jan/2024:00:00:00 +0000',
-      timeEpoch: 1704067200000,
-    },
-  } as APIGatewayProxyEventV2;
+    queryStringParameters: null,
+    body: null,
+    isBase64Encoded: false,
+  } as unknown as APIGatewayProxyEvent;
 }
 
 describe('Router', () => {

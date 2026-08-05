@@ -1,6 +1,6 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 
-export type RouteHandler = (event: APIGatewayProxyEventV2, params: Record<string, string>) => Promise<APIGatewayProxyResultV2>;
+export type RouteHandler = (event: APIGatewayProxyEvent, params: Record<string, string>) => Promise<APIGatewayProxyResult>;
 
 interface Route {
   method: string;
@@ -32,9 +32,9 @@ export class Router {
     return this;
   }
 
-  async route(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2 | null> {
-    const method = event.requestContext.http.method.toUpperCase();
-    const path = event.rawPath.replace(/\/$/, '') || '/';
+  async route(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult | null> {
+    const method = event.httpMethod.toUpperCase();
+    const path = event.path.replace(/\/$/, '') || '/';
 
     for (const route of this.routes) {
       const match = route.pattern.exec(path);
@@ -51,7 +51,7 @@ export class Router {
   }
 }
 
-export function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
+export function jsonResponse(statusCode: number, body: unknown): APIGatewayProxyResult {
   return {
     statusCode,
     headers: {
@@ -61,11 +61,11 @@ export function jsonResponse(statusCode: number, body: unknown): APIGatewayProxy
   };
 }
 
-export function notFound(): APIGatewayProxyResultV2 {
+export function notFound(): APIGatewayProxyResult {
   return jsonResponse(404, { error: 'NotFound', message: 'The requested resource was not found.' });
 }
 
-export function parseBody(event: APIGatewayProxyEventV2): unknown {
+export function parseBody(event: APIGatewayProxyEvent): unknown {
   if (!event.body) return {};
   const decoded = event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body;
   try {
@@ -75,7 +75,7 @@ export function parseBody(event: APIGatewayProxyEventV2): unknown {
   }
 }
 
-export function getQueryParam(event: APIGatewayProxyEventV2, name: string): string | undefined {
+export function getQueryParam(event: APIGatewayProxyEvent, name: string): string | undefined {
   const raw = event.queryStringParameters?.[name];
   return raw ? decodeURIComponent(raw) : undefined;
 }

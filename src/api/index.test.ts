@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
+import { APIGatewayProxyEvent } from 'aws-lambda';
 import { handler } from './index.js';
 import {
   createCertification as createCertificationRecord,
@@ -74,36 +74,22 @@ function makeEvent(
   path: string,
   body?: unknown,
   query?: Record<string, string>,
-): APIGatewayProxyEventV2 {
-  const rawQueryString = query ? new URLSearchParams(query).toString() : '';
+): APIGatewayProxyEvent {
   return {
-    version: '2.0',
-    routeKey: `${method} ${path}`,
-    rawPath: path,
-    rawQueryString,
-    queryStringParameters: query ?? {},
+    httpMethod: method,
+    path,
+    queryStringParameters: query ?? null,
     headers: {},
-    body: body === undefined ? undefined : JSON.stringify(body),
-    requestContext: {
-      accountId: '123456789',
-      apiId: 'api',
-      domainName: 'localhost',
-      domainPrefix: 'localhost',
-      http: { method, path, protocol: 'HTTP/1.1', sourceIp: '127.0.0.1', userAgent: 'test' },
-      requestId: 'req-1',
-      routeKey: `${method} ${path}`,
-      stage: 'test',
-      time: '01/Jan/2024:00:00:00 +0000',
-      timeEpoch: 1704067200000,
-    },
-  } as APIGatewayProxyEventV2;
+    body: body === undefined ? null : JSON.stringify(body),
+    isBase64Encoded: false,
+  } as unknown as APIGatewayProxyEvent;
 }
 
 describe('health endpoint', () => {
   it('returns 200 OK with a status payload', async () => {
     const result = (await handler(
       makeEvent('GET', '/v1/health'),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { status: string };
 
     expect(result.statusCode).toBe(200);
@@ -119,7 +105,7 @@ describe('POST /v1/certifications', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/certifications', certificationInput),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -143,7 +129,7 @@ describe('POST /v1/certifications', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/certifications', {}),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -155,7 +141,7 @@ describe('POST /v1/certifications', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/certifications', certificationInput),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -169,7 +155,7 @@ describe('GET /v1/certifications', () => {
 
     const result = (await handler(
       makeEvent('GET', '/v1/certifications'),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { items: Array<{ config: object }> };
 
     expect(result.statusCode).toBe(200);
@@ -184,7 +170,7 @@ describe('GET /v1/certifications/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', '/v1/certifications/11111111-1111-1111-1111-111111111111'),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { id: string; config: object };
 
     expect(result.statusCode).toBe(200);
@@ -197,7 +183,7 @@ describe('GET /v1/certifications/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', '/v1/certifications/unknown-id'),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -216,7 +202,7 @@ describe('PUT /v1/certifications/{id}', () => {
         '/v1/certifications/11111111-1111-1111-1111-111111111111',
         certificationUpdate,
       ),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -235,7 +221,7 @@ describe('PUT /v1/certifications/{id}', () => {
         ...certificationUpdate,
         provider: 'azure',
       }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -247,7 +233,7 @@ describe('PUT /v1/certifications/{id}', () => {
 
     const result = (await handler(
       makeEvent('PUT', '/v1/certifications/unknown-id', certificationUpdate),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -262,7 +248,7 @@ describe('PUT /v1/certifications/{id}', () => {
         ...certificationUpdate,
         config: { ...certificationUpdate.config, questionCount: 0 },
       }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -291,7 +277,7 @@ describe('POST /v1/exams', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as typeof examResponse;
 
     expect(result.statusCode).toBe(201);
@@ -302,7 +288,7 @@ describe('POST /v1/exams', () => {
   it('returns 400 Bad Request when certificationId is missing', async () => {
     const result = (await handler(
       makeEvent('POST', '/v1/exams', {}),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -313,7 +299,7 @@ describe('POST /v1/exams', () => {
   it('returns 400 Bad Request when certificationId is not a valid UUID', async () => {
     const result = (await handler(
       makeEvent('POST', '/v1/exams', { certificationId: 'not-a-uuid' }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -326,7 +312,7 @@ describe('POST /v1/exams', () => {
 
     const result = (await handler(
       makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -368,7 +354,7 @@ describe('GET /v1/exams/{id}/status', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}/status`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       status: string;
@@ -389,7 +375,7 @@ describe('GET /v1/exams/{id}/status', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}/status`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -404,7 +390,7 @@ describe('GET /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       schemaVersion: string;
       status: string;
@@ -423,7 +409,7 @@ describe('GET /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -436,7 +422,7 @@ describe('GET /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -450,7 +436,7 @@ describe('GET /v1/exams', () => {
 
     const result = (await handler(
       makeEvent('GET', '/v1/exams'),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       items: unknown[];
       cursor: { nextCursor: string | null; hasNextPage: boolean };
@@ -481,7 +467,7 @@ describe('GET /v1/exams', () => {
         limit: '10',
         cursor: 'c3RhcnRLZXk=',
       }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as {
       items: unknown[];
       cursor: { nextCursor: string; hasNextPage: boolean };
@@ -503,7 +489,7 @@ describe('GET /v1/exams', () => {
   it('returns 400 Bad Request for invalid query params', async () => {
     const result = (await handler(
       makeEvent('GET', '/v1/exams', undefined, { limit: 'not-a-number' }),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -521,7 +507,7 @@ describe('GET /v1/exams/{id}/download', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}/download`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
 
     expect(result.statusCode).toBe(200);
@@ -535,7 +521,7 @@ describe('GET /v1/exams/{id}/download', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}/download`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -552,7 +538,7 @@ describe('DELETE /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('DELETE', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
 
     expect(result.statusCode).toBe(204);
     expect(mockedDeleteArtifacts).toHaveBeenCalledWith([readyExam.s3KeyJson, readyExam.s3KeyPdf]);
@@ -565,7 +551,7 @@ describe('DELETE /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('DELETE', `/v1/exams/${examId}`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
 
     expect(result.statusCode).toBe(204);
     expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
@@ -577,7 +563,7 @@ describe('DELETE /v1/exams/{id}', () => {
 
     const result = (await handler(
       makeEvent('GET', `/v1/exams/${examId}/download`),
-    )) as APIGatewayProxyStructuredResultV2;
+    ));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
