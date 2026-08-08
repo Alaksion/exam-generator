@@ -57,7 +57,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
     return;
   }
 
-  const claimed = await updateExamStatus(exam.id, 'GENERATING', {}, 'PENDING');
+  const claimed = await claimPendingExam(exam.id);
   if (!claimed) {
     console.info('Failed to claim exam for generation, another worker is already generating', {
       examId: exam.id,
@@ -107,6 +107,10 @@ async function processRecord(record: SQSRecord): Promise<void> {
   } catch (error) {
     await failExam(exam.id, generating, message.correlationId, error);
   }
+}
+
+async function claimPendingExam(examId: string): Promise<boolean> {
+  return updateExamStatus(examId, 'GENERATING', {}, 'PENDING');
 }
 
 async function failExam(
