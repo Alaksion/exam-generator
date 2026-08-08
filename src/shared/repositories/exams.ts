@@ -36,7 +36,8 @@ export async function updateExamStatus(
   id: string,
   status: ExamStatus,
   updates: Partial<Omit<Exam, 'id' | 'status'>> = {},
-): Promise<void> {
+  expectedStatus?: ExamStatus,
+): Promise<boolean> {
   const expressionParts: string[] = ['#status = :status'];
   const names: Record<string, string> = { '#status': 'status' };
   const values: Record<string, unknown> = { ':status': status };
@@ -47,16 +48,31 @@ export async function updateExamStatus(
     values[`:${key}`] = value;
   }
 
-  await client.send(
-    new UpdateCommand({
-      TableName: config.examsTable,
-      Key: { id },
-      UpdateExpression: `SET ${expressionParts.join(', ')}`,
-      ExpressionAttributeNames: names,
-      ExpressionAttributeValues: values,
-      ConditionExpression: 'attribute_exists(id)',
-    }),
-  );
+  let conditionExpression = 'attribute_exists(id)';
+  if (expectedStatus) {
+    conditionExpression += ' AND #expectedStatus = :expectedStatus';
+    names['#expectedStatus'] = 'status';
+    values[':expectedStatus'] = expectedStatus;
+  }
+
+  try {
+    await client.send(
+      new UpdateCommand({
+        TableName: config.examsTable,
+        Key: { id },
+        UpdateExpression: `SET ${expressionParts.join(', ')}`,
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+        ConditionExpression: conditionExpression,
+      }),
+    );
+    return true;
+  } catch (error) {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function deleteExam(id: string): Promise<void> {

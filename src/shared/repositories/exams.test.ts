@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { listExams } from './exams.js';
+import { listExams, updateExamStatus } from './exams.js';
 
 const mockClient = vi.hoisted(() => ({
   send: vi.fn(),
@@ -133,5 +133,49 @@ describe('listExams', () => {
 
     const queryInput = mockClient.send.mock.calls[0][0] as { ExclusiveStartKey: Record<string, string> };
     expect(queryInput.ExclusiveStartKey.id).toBe('prev');
+  });
+});
+
+describe('updateExamStatus', () => {
+  it('returns true and adds the expected-status condition when none fails', async () => {
+    mockClient.send.mockResolvedValue({});
+
+    const result = await updateExamStatus('1', 'GENERATING', {}, 'PENDING');
+
+    expect(result).toBe(true);
+    const cmd = mockClient.send.mock.calls[0][0] as {
+      ConditionExpression: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(cmd.ConditionExpression).toContain('attribute_exists(id)');
+    expect(cmd.ConditionExpression).toContain('#expectedStatus = :expectedStatus');
+    expect(cmd.ExpressionAttributeValues[':expectedStatus']).toBe('PENDING');
+  });
+
+  it('returns false when the expected-status condition fails', async () => {
+    const conditionalError = Object.assign(new Error('The conditional request failed'), {
+      name: 'ConditionalCheckFailedException',
+    });
+    mockClient.send.mockRejectedValue(conditionalError);
+
+    const result = await updateExamStatus('1', 'GENERATING', {}, 'PENDING');
+
+    expect(result).toBe(false);
+  });
+
+  it('returns true without an expected-status condition when none is provided', async () => {
+    mockClient.send.mockResolvedValue({});
+
+    const result = await updateExamStatus('1', 'READY', { finishedAt: '2026-07-31T12:05:00.000Z' });
+
+    expect(result).toBe(true);
+    const cmd = mockClient.send.mock.calls[0][0] as { ConditionExpression: string };
+    expect(cmd.ConditionExpression).toBe('attribute_exists(id)');
+  });
+
+  it('rethrows non-conditional errors', async () => {
+    mockClient.send.mockRejectedValue(new Error('boom'));
+
+    await expect(updateExamStatus('1', 'GENERATING', {}, 'PENDING')).rejects.toThrow('boom');
   });
 });
