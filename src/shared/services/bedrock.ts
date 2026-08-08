@@ -187,9 +187,8 @@ export async function generateQuestionRaw(
       modelId,
       body: Buffer.from(
         JSON.stringify({
-          anthropic_version: 'bedrock-2023-05-31',
+          prompt,
           max_tokens: 1024,
-          messages: [{ role: 'user', content: prompt }],
         }),
       ),
       contentType: 'application/json',
@@ -198,9 +197,9 @@ export async function generateQuestionRaw(
   );
 
   const responseBody = JSON.parse(Buffer.from(response.body).toString()) as {
-    content: Array<{ type?: string; text?: string }>;
+    choices?: Array<{ text?: string }>;
   };
-  return responseBody.content[0].text ?? '';
+  return responseBody.choices?.[0]?.text ?? '';
 }
 
 export async function generateExamQuestions(

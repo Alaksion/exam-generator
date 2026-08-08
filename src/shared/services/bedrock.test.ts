@@ -36,12 +36,23 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
 });
 
 vi.mock('../config.js', () => ({
-  config: { bedrockModelDefault: 'anthropic.claude-3-haiku-20240307-v1:0' },
+  config: { bedrockModelDefault: 'deepseek.v3.2' },
 }));
 
 function makeBedrockResponse(text: string): { body: Uint8Array } {
   return {
-    body: Uint8Array.from(Buffer.from(JSON.stringify({ content: [{ type: 'text', text }] }))),
+    body: Uint8Array.from(
+      Buffer.from(
+        JSON.stringify({
+          choices: [
+            {
+              text,
+              stop_reason: 'stop',
+            },
+          ],
+        }),
+      ),
+    ),
   };
 }
 
@@ -262,9 +273,11 @@ describe('regenerateQuestion', () => {
     const commandInput = calls[0][0] as { modelId: string; body: Buffer };
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
-    const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
-    expect(requestBody.messages[0].content).toContain('knowledge domain Security');
-    expect(requestBody.messages[0].content).toContain('topic IAM');
+    const requestBody = JSON.parse(commandInput.body.toString()) as {
+      prompt: string;
+    };
+    expect(requestBody.prompt).toContain('knowledge domain Security');
+    expect(requestBody.prompt).toContain('topic IAM');
   });
 });
 
@@ -281,10 +294,12 @@ describe('generateQuestionRaw', () => {
     const commandInput = calls[0][0] as { modelId: string; body: Buffer };
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
-    const requestBody = JSON.parse(commandInput.body.toString()) as { messages: Array<{ content: string }> };
-    expect(requestBody.messages[0].content).toContain('Billing');
-    expect(requestBody.messages[0].content).toContain('Pricing');
-    expect(requestBody.messages[0].content).toContain(buildQuestionFormatSpec());
+    const requestBody = JSON.parse(commandInput.body.toString()) as {
+      prompt: string;
+    };
+    expect(requestBody.prompt).toContain('Billing');
+    expect(requestBody.prompt).toContain('Pricing');
+    expect(requestBody.prompt).toContain(buildQuestionFormatSpec());
   });
 });
 
