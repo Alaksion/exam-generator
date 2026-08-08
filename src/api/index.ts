@@ -1,6 +1,7 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { z } from 'zod';
 import { Router, jsonResponse, notFound, parseBody } from '../shared/router.js';
+import { buildCorsHeaders } from '../shared/cors.js';
 import {
   createCertification,
   updateCertificationById,
@@ -151,10 +152,33 @@ function mapErrorToResponse(error: unknown): APIGatewayProxyResult {
 }
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  const corsHeaders = buildCorsHeaders(event.headers?.Origin ?? event.headers?.origin);
+
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204,
+      headers: corsHeaders,
+      body: '',
+    };
+  }
+
   try {
     const result = await router.route(event);
-    return result ?? notFound();
+    return withCors(result ?? notFound(), corsHeaders);
   } catch (error) {
-    return mapErrorToResponse(error);
+    return withCors(mapErrorToResponse(error), corsHeaders);
   }
 };
+
+function withCors(result: APIGatewayProxyResult, corsHeaders: Record<string, string>): APIGatewayProxyResult {
+  if (Object.keys(corsHeaders).length === 0) {
+    return result;
+  }
+  return {
+    ...result,
+    headers: {
+      ...result.headers,
+      ...corsHeaders,
+    },
+  };
+}
