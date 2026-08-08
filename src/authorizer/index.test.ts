@@ -10,13 +10,16 @@ import { fetchExpectedKey } from './apiKey.js';
 
 const mockedFetchExpectedKey = vi.mocked(fetchExpectedKey);
 
-function makeEvent(headers: Record<string, string> = {}): APIGatewayRequestAuthorizerEvent {
+function makeEvent(
+  headers: Record<string, string> = {},
+  httpMethod = 'GET',
+): APIGatewayRequestAuthorizerEvent {
   return {
     type: 'REQUEST',
     methodArn: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
     resource: '/v1/health',
     path: '/v1/health',
-    httpMethod: 'GET',
+    httpMethod,
     headers,
     multiValueHeaders: {},
     queryStringParameters: {},
@@ -43,6 +46,18 @@ describe('authorizer handler', () => {
       Action: 'execute-api:Invoke',
       Resource: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
     });
+  });
+
+  it('allows an OPTIONS preflight without an API key', async () => {
+    const result = await handler(makeEvent({}, 'OPTIONS'));
+
+    expect(result.principalId).toBe('user');
+    expect(result.policyDocument.Statement[0]).toMatchObject({
+      Effect: 'Allow',
+      Action: 'execute-api:Invoke',
+      Resource: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
+    });
+    expect(mockedFetchExpectedKey).not.toHaveBeenCalled();
   });
 
   it('rejects the request when the header is missing', async () => {
