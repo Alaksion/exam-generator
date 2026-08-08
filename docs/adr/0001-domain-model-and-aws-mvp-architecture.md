@@ -27,7 +27,7 @@ This keeps the API clear (`POST /v1/certifications` to create a type, `POST /v1/
 
 ### 2. The Exam is the generation job
 
-Rather than maintaining a separate `Job` or `Task` resource, the `Exam` itself carries the generation status (`GENERATING`, `READY`, `FAILED`). A dedicated status endpoint returns only the status fields, and the full detail endpoint returns `409 Conflict` while the exam is not ready.
+Rather than maintaining a separate `Job` or `Task` resource, the `Exam` itself carries the generation status (`PENDING`, `GENERATING`, `READY`, `FAILED`). A dedicated status endpoint returns only the status fields, and the full detail endpoint returns `409 Conflict` while the exam is not ready.
 
 ### 3. Asynchronous generation via SQS
 
@@ -96,5 +96,5 @@ An exam cannot be edited after generation, but `DELETE /v1/exams/{id}` removes b
 - The domain model is small and focused: `Certification`, `Exam`, `Question`, `AnswerOption`.
 - The generator is cleanly decoupled from the API via SQS.
 - The persistence split (DynamoDB + S3) handles the large exam payloads without hitting DynamoDB item-size limits.
-- Failure handling is intentionally thin in the MVP; only `GENERATING` and `READY` are implemented. `FAILED` is reserved.
+- Failure handling: an exam is created `PENDING` and claimed to `GENERATING` when the generator starts; it settles to `READY` on success or `FAILED` on any generation failure (missing certification, parse failure, or a thrown error during generation/artifacts/PDF). A claimed exam is never left permanently in-flight — failures are settled, and duplicate/redelivered messages abort on the in-flight state.
 - The public, API-key-only model means the system relies on infrastructure-level controls for abuse prevention.

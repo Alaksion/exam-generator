@@ -53,7 +53,7 @@ Core fields:
 - `id` — UUID.
 - `certificationId` — reference to the `Certification` that generated this exam.
 - `title` — auto-generated title: `{Certification.name} - Practice Exam {ISO-8601 timestamp}`.
-- `status` — `GENERATING`, `READY`, or `FAILED`. The MVP implements only `GENERATING` and `READY`; `FAILED` is reserved for later.
+- `status` — `PENDING`, `GENERATING`, `READY`, or `FAILED`. An exam is created `PENDING`, is claimed to `GENERATING` when the generator actually starts work, and settles to `READY` on success or `FAILED` on failure.
 - `createdAt` — creation timestamp.
 - `finishedAt` — timestamp when generation completed; `null` until then.
 - `s3KeyJson` — S3 key for the canonical JSON artifact.
@@ -67,10 +67,13 @@ Lifecycle:
 POST /v1/exams
   │
   ▼
-Exam created with status GENERATING
+Exam created with status PENDING
   │
   ▼
 SQS message sent to generator
+  │
+  ▼
+Generator atomically claims exam to status GENERATING
   │
   ▼
 Generator calls Bedrock once per question, sequentially
@@ -79,7 +82,7 @@ Generator calls Bedrock once per question, sequentially
 Generator uploads JSON + PDF to S3
   │
   ▼
-Exam updated to status READY
+Exam updated to status READY  (or FAILED on any failure)
 ```
 
 An `Exam` is immutable after it reaches `READY`. `DELETE /v1/exams/{id}` removes both the DynamoDB row and the S3 objects, but no update operation exists.
@@ -156,5 +159,5 @@ Examples:
 
 - `InvalidRequest` — `400`
 - `ExamNotFound` — `404`
-- `ExamNotReady` — `409` (exam exists but is still `GENERATING` or `FAILED`)
+- `ExamNotReady` — `409` (exam exists but is not `READY`)
 - `InternalError` — `500`
