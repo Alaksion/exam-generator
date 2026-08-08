@@ -28,6 +28,10 @@ Parameters:
     Type: Number
     Default: 3000
     Description: Maximum requests allowed from a single IP within a 5-minute window.
+  AllowedOrigins:
+    Type: String
+    Default: http://localhost:5173
+    Description: Comma-separated list of origins allowed to call the public API (CORS).
 
 Globals:
   Function:
@@ -49,6 +53,7 @@ Globals:
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
         PRESIGNED_URL_EXPIRATION_SECONDS: '300'
+        ALLOWED_ORIGINS: !Ref AllowedOrigins
     Tags:
       Project: exam-generator
       Environment: !Ref Environment
@@ -62,11 +67,6 @@ Resources:
     Properties:
       Name: !Sub ${AWS::StackName}-public-api
       StageName: !Ref Environment
-      Cors:
-        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type,x-api-key'"
-        AllowOrigin: "'*'"
-        MaxAge: "'600'"
       Auth:
         DefaultAuthorizer: ApiKeyAuthorizer
         Authorizers:

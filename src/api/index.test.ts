@@ -74,12 +74,13 @@ function makeEvent(
   path: string,
   body?: unknown,
   query?: Record<string, string>,
+  headers: Record<string, string> = {},
 ): APIGatewayProxyEvent {
   return {
     httpMethod: method,
     path,
     queryStringParameters: query ?? null,
-    headers: {},
+    headers,
     body: body === undefined ? null : JSON.stringify(body),
     isBase64Encoded: false,
   } as unknown as APIGatewayProxyEvent;
@@ -95,6 +96,44 @@ describe('health endpoint', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers).toEqual({ 'Content-Type': 'application/json' });
     expect(body.status).toBe('ok');
+  });
+});
+
+describe('CORS handling', () => {
+  it('echoes Access-Control-Allow-Origin for an allowed origin', async () => {
+    const result = (await handler(
+      makeEvent('GET', '/v1/health', undefined, undefined, {
+        Origin: 'http://localhost:5173',
+      }),
+    ));
+
+    expect(result.statusCode).toBe(200);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
+  });
+
+  it('omits Access-Control-Allow-Origin for a disallowed origin', async () => {
+    const result = (await handler(
+      makeEvent('GET', '/v1/health', undefined, undefined, {
+        Origin: 'https://evil.example.com',
+      }),
+    ));
+
+    expect(result.statusCode).toBe(200);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBeUndefined();
+  });
+
+  it('answers OPTIONS with CORS headers for an allowed origin', async () => {
+    const result = (await handler(
+      makeEvent('OPTIONS', '/v1/certifications', undefined, undefined, {
+        Origin: 'http://localhost:5173',
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'content-type,x-api-key',
+      }),
+    ));
+
+    expect(result.statusCode).toBe(204);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
+    expect(result.headers?.['Access-Control-Allow-Methods']).toContain('GET');
   });
 });
 
