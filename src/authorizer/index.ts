@@ -6,7 +6,7 @@ export const handler = async (
 ): Promise<APIGatewayAuthorizerResult> => {
   console.log('Authorizer event:', JSON.stringify(event, null, 2));
 
-  if (event.httpMethod === 'OPTIONS') {
+  if (isPreflight(event)) {
     return generatePolicy('user', 'Allow', event.methodArn);
   }
 
@@ -30,6 +30,14 @@ export const handler = async (
   console.log('API key validated successfully.');
   return generatePolicy('user', 'Allow', event.methodArn);
 };
+
+function isPreflight(event: APIGatewayRequestAuthorizerEvent): boolean {
+  if ((event.httpMethod ?? '').toUpperCase() === 'OPTIONS') {
+    return true;
+  }
+  const verb = event.methodArn.split('/')[2]?.toUpperCase();
+  return verb === 'OPTIONS';
+}
 
 function generatePolicy(
   principalId: string,
