@@ -65,7 +65,7 @@ describe('requestExamGeneration', () => {
     const exam = await requestExamGeneration(certification.id, now);
 
     expect(exam.certificationId).toBe(certification.id);
-    expect(exam.status).toBe('GENERATING');
+    expect(exam.status).toBe('PENDING');
     expect(createExamRecord).toHaveBeenCalledWith(exam);
 
     const mockedCommand = vi.mocked(SendMessageCommand);
@@ -103,7 +103,7 @@ describe('toCreatedExamResponse', () => {
       certificationId: certification.id,
       provider: certification.provider,
       title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
-      status: 'GENERATING' as const,
+      status: 'PENDING' as const,
       createdAt: '2026-07-28T12:00:00.000Z',
       finishedAt: null,
       s3KeyJson: undefined,

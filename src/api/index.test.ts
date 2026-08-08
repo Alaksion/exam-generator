@@ -298,7 +298,7 @@ describe('PUT /v1/certifications/{id}', () => {
 describe('POST /v1/exams', () => {
   const examResponse = {
     id: '22222222-2222-2222-2222-222222222222',
-    status: 'GENERATING' as const,
+    status: 'PENDING' as const,
   };
 
   it('returns 201 Created and requests exam generation', async () => {
