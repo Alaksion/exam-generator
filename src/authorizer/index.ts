@@ -5,6 +5,11 @@ export const handler = async (
   event: APIGatewayRequestAuthorizerEvent,
 ): Promise<APIGatewayAuthorizerResult> => {
   console.log('Authorizer event:', JSON.stringify(event, null, 2));
+
+  if (event.httpMethod === 'OPTIONS') {
+    return generatePolicy('user', 'Allow', event.methodArn);
+  }
+
   const providedKey = event.headers?.['x-api-key'] ?? event.headers?.['X-Api-Key'] ?? '';
   if (!providedKey) {
     throw new Error('Unauthorized');
