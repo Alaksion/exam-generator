@@ -10,13 +10,17 @@ import { fetchExpectedKey } from './apiKey.js';
 
 const mockedFetchExpectedKey = vi.mocked(fetchExpectedKey);
 
-function makeEvent(headers: Record<string, string> = {}): APIGatewayRequestAuthorizerEvent {
+function makeEvent(
+  headers: Record<string, string> = {},
+  httpMethod = 'GET',
+  methodArn = 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
+): APIGatewayRequestAuthorizerEvent {
   return {
     type: 'REQUEST',
-    methodArn: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
-    resource: '/v1/health',
-    path: '/v1/health',
-    httpMethod: 'GET',
+    methodArn,
+    resource: '/{proxy+}',
+    path: methodArn.split('/')[7] ?? '/',
+    httpMethod,
     headers,
     multiValueHeaders: {},
     queryStringParameters: {},
@@ -43,6 +47,30 @@ describe('authorizer handler', () => {
       Action: 'execute-api:Invoke',
       Resource: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/GET/v1/health',
     });
+  });
+
+  it('allows an OPTIONS preflight without an API key (verb from methodArn)', async () => {
+    const result = await handler(
+      makeEvent({}, 'ANY', 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/OPTIONS/v1/certifications'),
+    );
+
+    expect(result.principalId).toBe('user');
+    expect(result.policyDocument.Statement[0]).toMatchObject({
+      Effect: 'Allow',
+      Action: 'execute-api:Invoke',
+      Resource: 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/OPTIONS/v1/certifications',
+    });
+    expect(mockedFetchExpectedKey).not.toHaveBeenCalled();
+  });
+
+  it('allows an OPTIONS preflight with a direct OPTIONS httpMethod', async () => {
+    const result = await handler(
+      makeEvent({}, 'OPTIONS', 'arn:aws:execute-api:us-east-1:123456789:abc123/dev/OPTIONS/v1/certifications'),
+    );
+
+    expect(result.principalId).toBe('user');
+    expect(result.policyDocument.Statement[0]).toMatchObject({ Effect: 'Allow' });
+    expect(mockedFetchExpectedKey).not.toHaveBeenCalled();
   });
 
   it('rejects the request when the header is missing', async () => {
