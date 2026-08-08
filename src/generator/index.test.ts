@@ -53,16 +53,21 @@ const examId = '22222222-2222-2222-2222-222222222222';
 const correlationId = '33333333-3333-3333-3333-333333333333';
 const keys = buildArtifactKeys(examId);
 
-const generatingExam: Exam = {
+const pendingExam: Exam = {
   id: examId,
   certificationId: certification.id,
   provider: certification.provider,
   title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
-  status: 'GENERATING',
+  status: 'PENDING',
   createdAt: '2026-07-28T12:00:00.000Z',
   finishedAt: null,
   s3KeyJson: undefined,
   s3KeyPdf: undefined,
+};
+
+const claimedExam: Exam = {
+  ...pendingExam,
+  status: 'GENERATING',
 };
 
 function makeEvent(message: object): SQSEvent {
@@ -90,6 +95,7 @@ function makeEvent(message: object): SQSEvent {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedUpdateExam.mockResolvedValue(true);
 });
 
 const sampleQuestion = {
@@ -110,9 +116,9 @@ const sampleQuestion = {
 };
 
 describe('generator handler', () => {
-  it('processes a GENERATING exam and marks it READY with artifacts', async () => {
+  it('claims a PENDING exam and marks it READY with artifacts', async () => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-    mockedGetExam.mockResolvedValue(generatingExam);
+    mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
     mockedParseExamQuestions.mockResolvedValue([sampleQuestion]);
@@ -121,7 +127,8 @@ describe('generator handler', () => {
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
-    expect(mockedGenerateExamQuestions).toHaveBeenCalledWith(generatingExam, certification, correlationId);
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedGenerateExamQuestions).toHaveBeenCalledWith(claimedExam, certification, correlationId);
     expect(mockedParseExamQuestions).toHaveBeenCalled();
 
     expect(mockedUpdateExam).toHaveBeenCalledWith(
@@ -176,23 +183,36 @@ describe('generator handler', () => {
 
   it('marks the exam FAILED when question parsing fails after retry', async () => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-    mockedGetExam.mockResolvedValue(generatingExam);
+    mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
     mockedParseExamQuestions.mockResolvedValue(null);
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
 
-    const finishedAt = (mockedUpdateExam.mock.calls[0][2] as { finishedAt: string }).finishedAt;
+    const failedCall = mockedUpdateExam.mock.calls.find((call) => call[1] === 'FAILED');
+    const finishedAt = (failedCall![2] as { finishedAt: string }).finishedAt;
     expect(finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+  });
+
+  it('aborts when the exam is already GENERATING (duplicate/in-flight)', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    mockedGetExam.mockResolvedValue(claimedExam);
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedUpdateExam).not.toHaveBeenCalled();
+    expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
     expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
   });
 
   it('skips already processed exams', async () => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-    mockedGetExam.mockResolvedValue({ ...generatingExam, status: 'READY' });
+    mockedGetExam.mockResolvedValue({ ...pendingExam, status: 'READY' });
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
@@ -208,12 +228,27 @@ describe('generator handler', () => {
     expect(mockedUpdateExam).not.toHaveBeenCalled();
   });
 
-  it('skips when certification is not found', async () => {
-    mockedGetExam.mockResolvedValue(generatingExam);
+  it('aborts when the claim fails (another worker already generating)', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    mockedGetExam.mockResolvedValue(pendingExam);
+    mockedUpdateExam.mockResolvedValue(false);
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
+    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+  });
+
+  it('claims the exam but skips when certification is not found', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(null);
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
-    expect(mockedUpdateExam).not.toHaveBeenCalled();
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
+    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
   });
 });

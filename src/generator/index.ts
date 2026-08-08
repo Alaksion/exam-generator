@@ -49,10 +49,22 @@ async function processRecord(record: SQSRecord): Promise<void> {
     return;
   }
 
-  if (exam.status !== 'GENERATING') {
-    console.info('Exam already processed, skipping record', { examId: exam.id, status: exam.status });
+  if (exam.status !== 'PENDING') {
+    console.info('Exam is not pending, aborting record to prevent duplicate generation', {
+      examId: exam.id,
+      status: exam.status,
+    });
     return;
   }
+
+  const claimed = await updateExamStatus(exam.id, 'GENERATING', {}, 'PENDING');
+  if (!claimed) {
+    console.info('Failed to claim exam for generation, another worker is already generating', {
+      examId: exam.id,
+    });
+    return;
+  }
+  const generating = transitionExamStatus(exam, 'GENERATING');
 
   const certification = await getCertificationById(message.certificationId);
   if (!certification) {
@@ -63,7 +75,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
     return;
   }
 
-  const rawResponses = await generateExamQuestions(exam, certification, message.correlationId);
+  const rawResponses = await generateExamQuestions(generating, certification, message.correlationId);
   const contexts = buildQuestionContexts(certification.config);
   const questions = await parseExamQuestions(rawResponses, contexts, async (context) =>
     regenerateQuestion(context, certification, message.correlationId),
@@ -73,7 +85,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
   const now = new Date();
 
   if (!questions) {
-    const failed = transitionExamStatus(exam, 'FAILED', now);
+    const failed = transitionExamStatus(generating, 'FAILED', now);
     console.error('Exam generation failed after retry', { examId: exam.id, correlationId: message.correlationId });
     await updateExamStatus(exam.id, 'FAILED', {
       finishedAt: failed.finishedAt,
@@ -81,7 +93,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
     return;
   }
 
-  const transitioned = transitionExamStatus(exam, 'READY', now);
+  const transitioned = transitionExamStatus(generating, 'READY', now);
 
   const fullExam: FullExam = {
     schemaVersion: CANONICAL_EXAM_SCHEMA_VERSION,
