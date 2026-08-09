@@ -12,7 +12,7 @@ export function createExam(certification: Certification, now = new Date()): Exam
     certificationId: certification.id,
     provider: certification.provider,
     title: generateExamTitle(certification, now),
-    status: 'GENERATING',
+    status: 'PENDING',
     createdAt: now.toISOString(),
     finishedAt: null,
     s3KeyJson: undefined,
@@ -20,18 +20,29 @@ export function createExam(certification: Certification, now = new Date()): Exam
   };
 }
 
+type TransitionTarget = Exclude<ExamStatus, 'PENDING'>;
+
+const NEXT_STATUS: Record<ExamStatus, readonly TransitionTarget[]> = {
+  PENDING: ['GENERATING', 'FAILED'],
+  GENERATING: ['READY', 'FAILED'],
+  READY: [],
+  FAILED: [],
+};
+
 export function transitionExamStatus(
   exam: Exam,
-  newStatus: Extract<ExamStatus, 'READY' | 'FAILED'>,
+  newStatus: TransitionTarget,
   now = new Date(),
 ): Exam {
-  if (exam.status !== 'GENERATING') {
+  if (!NEXT_STATUS[exam.status].includes(newStatus)) {
     throw new ConflictError(`Cannot transition exam from ${exam.status} to ${newStatus}.`);
   }
+
+  const terminal = newStatus === 'READY' || newStatus === 'FAILED';
 
   return {
     ...exam,
     status: newStatus,
-    finishedAt: now.toISOString(),
+    finishedAt: terminal ? now.toISOString() : exam.finishedAt,
   };
 }

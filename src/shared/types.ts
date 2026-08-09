@@ -105,7 +105,7 @@ export const Question = z.object({
 });
 export type Question = z.infer<typeof Question>;
 
-export const ExamStatus = z.enum(['GENERATING', 'READY', 'FAILED']);
+export const ExamStatus = z.enum(['PENDING', 'GENERATING', 'READY', 'FAILED']);
 export type ExamStatus = z.infer<typeof ExamStatus>;
 
 export const Exam = z.object({
