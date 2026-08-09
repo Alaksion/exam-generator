@@ -11,6 +11,7 @@ import {
   allocateByDifficulty,
   invokeWithRetry,
   isTransientError,
+  mapWithConcurrency,
   QUESTION_PROMPT_TEMPLATE,
   PromptContext,
   QuestionAttributes,
@@ -38,7 +39,11 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
 });
 
 vi.mock('../config.js', () => ({
-  config: { bedrockModelDefault: 'deepseek.v3.2', bedrockMaxAttempts: 3 },
+  config: {
+    bedrockModelDefault: 'deepseek.v3.2',
+    bedrockMaxAttempts: 3,
+    bedrockConcurrency: 5,
+  },
 }));
 
 function makeBedrockResponse(text: string): { body: Uint8Array } {
@@ -136,6 +141,41 @@ describe('invokeWithRetry', () => {
       .mockRejectedValue(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }));
     await expect(invokeWithRetry(operation, 0, noopSleep)).rejects.toThrow('throttled');
     expect(operation).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('mapWithConcurrency', () => {
+  it('preserves input order even when work completes out of order', async () => {
+    const input = [1, 2, 3, 4];
+    const results = await mapWithConcurrency(input, 2, async (value) => {
+      await new Promise((resolve) => setTimeout(resolve, (4 - value) * 10));
+      return value * 10;
+    });
+    expect(results).toEqual([10, 20, 30, 40]);
+  });
+
+  it('never exceeds the concurrency limit', async () => {
+    const input = [1, 2, 3, 4, 5, 6];
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    await mapWithConcurrency(input, 2, async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight -= 1;
+    });
+
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+  });
+
+  it('returns an empty array for empty input', async () => {
+    await expect(mapWithConcurrency([], 3, async (v) => v)).resolves.toEqual([]);
+  });
+
+  it('treats a limit below one as a limit of one', async () => {
+    const results = await mapWithConcurrency([1, 2], 0, async (v) => v * 2);
+    expect(results).toEqual([2, 4]);
   });
 });
 
@@ -388,26 +428,42 @@ describe('generateQuestionRaw', () => {
 });
 
 describe('generateExamQuestions', () => {
-  it('calls Bedrock once per question and returns raw responses', async () => {
-    const questionCount = certification.config.questionCount;
-    sendMock.mockResolvedValue(makeBedrockResponse('raw response'));
+  const questionCount = certification.config.questionCount;
+  const exam = {
+    id: '22222222-2222-2222-2222-222222222222',
+    certificationId: certification.id,
+    provider: 'aws' as const,
+    title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
+    status: 'GENERATING' as const,
+    createdAt: '2026-07-28T12:00:00.000Z',
+    finishedAt: null,
+    s3KeyJson: undefined,
+    s3KeyPdf: undefined,
+  };
 
-    const exam = {
-      id: '22222222-2222-2222-2222-222222222222',
-      certificationId: certification.id,
-      provider: 'aws' as const,
-      title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
-      status: 'GENERATING' as const,
-      createdAt: '2026-07-28T12:00:00.000Z',
-      finishedAt: null,
-      s3KeyJson: undefined,
-      s3KeyPdf: undefined,
-    };
+  it('calls Bedrock once per question and returns raw responses', async () => {
+    sendMock.mockResolvedValue(makeBedrockResponse('raw response'));
 
     const rawResponses = await generateExamQuestions(exam, certification, 'corr-789');
 
     expect(rawResponses).toHaveLength(questionCount);
     expect(rawResponses.every((r) => r === 'raw response')).toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(questionCount);
+  });
+
+  it('keeps responses aligned to question order when calls complete out of order', async () => {
+    sendMock.mockImplementation(async (command: { body: Buffer }) => {
+      const parsed = JSON.parse(command.body.toString()) as { prompt: string };
+      const match = parsed.prompt.match(/question number (\d+)/);
+      const number = match ? Number(match[1]) : 0;
+      await new Promise((resolve) => setTimeout(resolve, (12 - number) * 10));
+      return makeBedrockResponse(`q${number}`);
+    });
+
+    const rawResponses = await generateExamQuestions(exam, certification, 'corr-order');
+
+    expect(rawResponses).toEqual(
+      Array.from({ length: questionCount }, (_, i) => `q${i + 1}`),
+    );
   });
 });
