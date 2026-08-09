@@ -21,11 +21,11 @@ export interface QuestionAttributes {
   topicId: string;
 }
 
-const bedrockClient = new BedrockRuntimeClient({});
+const bedrockClient = new BedrockRuntimeClient({ maxAttempts: 1 });
 
 const TRANSIENT_ERROR_NAMES = new Set([
   'ThrottlingException',
-  'ServiceUnavailable',
+  'ServiceUnavailableException',
   'InternalServerException',
 ]);
 
@@ -49,16 +49,14 @@ export async function invokeWithRetry<T>(
   operation: () => Promise<T>,
   attempts: number,
   sleep: (ms: number) => Promise<void> = delay,
-  shouldRetry: (error: unknown) => boolean = isTransientError,
 ): Promise<T> {
   const budget = attempts < 1 ? 1 : attempts;
 
   for (let attempt = 0; attempt < budget; attempt++) {
-    const isLastAttempt = attempt === budget - 1;
     try {
       return await operation();
     } catch (error) {
-      if (isLastAttempt || !shouldRetry(error)) {
+      if (attempt >= budget - 1 || !isTransientError(error)) {
         throw error;
       }
       const backoffMs = 500 * 2 ** attempt;
@@ -67,7 +65,7 @@ export async function invokeWithRetry<T>(
     }
   }
 
-  throw new Error('invokeWithRetry exhausted its attempt budget');
+  throw new Error('invokeWithRetry: attempt budget exhausted');
 }
 
 export const QUESTION_PROMPT_TEMPLATE =

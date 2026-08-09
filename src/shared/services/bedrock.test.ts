@@ -74,8 +74,9 @@ beforeEach(() => {
 describe('isTransientError', () => {
   it('returns true for throttling, service-unavailable, and internal errors', () => {
     expect(isTransientError(Object.assign(new Error('x'), { name: 'ThrottlingException' }))).toBe(true);
-    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailable' }))).toBe(true);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailableException' }))).toBe(true);
     expect(isTransientError(Object.assign(new Error('x'), { name: 'InternalServerException' }))).toBe(true);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailable' }))).toBe(false);
   });
 
   it('returns true when the SDK marks the error as retryable', () => {
