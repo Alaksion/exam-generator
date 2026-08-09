@@ -177,6 +177,22 @@ describe('mapWithConcurrency', () => {
     const results = await mapWithConcurrency([1, 2], 0, async (v) => v * 2);
     expect(results).toEqual([2, 4]);
   });
+
+  it('stops dispatching further items once a mapper rejects', async () => {
+    const started: number[] = [];
+    await expect(
+      mapWithConcurrency([1, 2, 3], 2, async (value) => {
+        started.push(value);
+        if (value === 2) {
+          throw new Error('boom');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return value;
+      }),
+    ).rejects.toThrow('boom');
+
+    expect(started).toEqual([1, 2]);
+  });
 });
 
 describe('renderPrompt', () => {

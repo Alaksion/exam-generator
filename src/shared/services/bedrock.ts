@@ -53,18 +53,27 @@ export async function mapWithConcurrency<T, R>(
   const poolLimit = limit < 1 ? 1 : limit;
   const results = new Array<R>(items.length);
   let nextIndex = 0;
+  let stopped = false;
 
-  function fetchIndex(): number | null {
+  function takeNextIndex(): number | null {
+    if (stopped) {
+      return null;
+    }
     const index = nextIndex;
     nextIndex += 1;
     return index < items.length ? index : null;
   }
 
   async function worker(): Promise<void> {
-    let index = fetchIndex();
+    let index = takeNextIndex();
     while (index !== null) {
-      results[index] = await mapper(items[index], index);
-      index = fetchIndex();
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
+      index = takeNextIndex();
     }
   }
 
