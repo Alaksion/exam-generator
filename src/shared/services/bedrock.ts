@@ -45,6 +45,34 @@ export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const poolLimit = limit < 1 ? 1 : limit;
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  function fetchIndex(): number | null {
+    const index = nextIndex;
+    nextIndex += 1;
+    return index < items.length ? index : null;
+  }
+
+  async function worker(): Promise<void> {
+    let index = fetchIndex();
+    while (index !== null) {
+      results[index] = await mapper(items[index], index);
+      index = fetchIndex();
+    }
+  }
+
+  const workerCount = Math.min(poolLimit, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
 export async function invokeWithRetry<T>(
   operation: () => Promise<T>,
   attempts: number,
@@ -257,16 +285,17 @@ export async function generateExamQuestions(
   correlationId: string,
 ): Promise<string[]> {
   const attributes = buildQuestionContexts(certification.config);
-  const rawResponses: string[] = [];
 
-  for (const attribute of attributes) {
-    const raw = await generateQuestionRaw(
-      config.bedrockModelDefault,
-      buildPromptContext(attribute, certification),
-      correlationId,
-    );
-    rawResponses.push(raw);
-  }
+  const rawResponses = await mapWithConcurrency(
+    attributes,
+    config.bedrockConcurrency,
+    async (attribute) =>
+      generateQuestionRaw(
+        config.bedrockModelDefault,
+        buildPromptContext(attribute, certification),
+        correlationId,
+      ),
+  );
 
   console.info('Completed Bedrock generation', {
     correlationId,
