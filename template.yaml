@@ -213,7 +213,7 @@ Resources:
     Properties:
       CodeUri: ./
       Description: SQS worker that generates exam questions, renders the PDF, and uploads artifacts.
-      Timeout: 300
+      Timeout: 600
       MemorySize: 2048
       Events:
         SqsEvent:
@@ -312,7 +312,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub ${AWS::StackName}-generator-queue
-      VisibilityTimeout: 360
+      VisibilityTimeout: 900
       MessageRetentionPeriod: 1209600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt GeneratorDLQ.Arn
