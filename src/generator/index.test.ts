@@ -240,7 +240,7 @@ describe('generator handler', () => {
     expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
   });
 
-  it('claims the exam but skips when certification is not found', async () => {
+  it('marks the exam FAILED when the certification is not found', async () => {
     const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(null);
@@ -248,7 +248,48 @@ describe('generator handler', () => {
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
     expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
+    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+  });
+
+  it('marks the exam FAILED when question generation throws', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    mockedGetExam.mockResolvedValue(pendingExam);
+    mockedGetCert.mockResolvedValue(certification);
+    mockedGenerateExamQuestions.mockRejectedValue(new Error('Bedrock throttled'));
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
+    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+  });
+
+  it('marks the exam FAILED when artifact upload or PDF render throws', async () => {
+    mockedGetExam.mockResolvedValue(pendingExam);
+    mockedGetCert.mockResolvedValue(certification);
+    mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
+    mockedParseExamQuestions.mockResolvedValue([sampleQuestion]);
+    mockedRenderExamPdf.mockRejectedValue(new Error('PDF render failed'));
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
+
+    const failedCall = mockedUpdateExam.mock.calls.find((call) => call[1] === 'FAILED');
+    const finishedAt = (failedCall![2] as { finishedAt: string }).finishedAt;
+    expect(finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('skips exams already in a FAILED terminal state', async () => {
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    mockedGetExam.mockResolvedValue({ ...pendingExam, status: 'FAILED', finishedAt: '2026-07-28T12:00:05.000Z' });
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedUpdateExam).not.toHaveBeenCalled();
     expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
   });
 });
