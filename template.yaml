@@ -213,6 +213,8 @@ Resources:
     Properties:
       CodeUri: ./
       Description: SQS worker that generates exam questions, renders the PDF, and uploads artifacts.
+# Lambda timeout: must stay below the queue's VisibilityTimeout so an in-flight exam is
+# not redelivered while the worker still runs (redelivery + maxReceiveCount would DLQ it).
       Timeout: 600
       MemorySize: 2048
       Events:
@@ -312,6 +314,8 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub ${AWS::StackName}-generator-queue
+      # Must exceed the GeneratorFunction Timeout (600s) so a long-running exam is not
+      # redelivered mid-flight; keeps the visibility horizon past any single worker run.
       VisibilityTimeout: 900
       MessageRetentionPeriod: 1209600
       RedrivePolicy:
