@@ -25,5 +25,6 @@ export const config = {
   examsTable: requireEnv('DYNAMODB_EXAMS_TABLE'),
   generatorQueueUrl: requireEnv('SQS_GENERATOR_QUEUE_URL'),
   artifactsBucket: requireEnv('S3_ARTIFACTS_BUCKET'),
+  bedrockMaxAttempts: getIntEnv('BEDROCK_MAX_ATTEMPTS', 3),
   presignedUrlExpirationSeconds: getIntEnv('PRESIGNED_URL_EXPIRATION_SECONDS', 300),
 } as const;
