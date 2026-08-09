@@ -21,7 +21,52 @@ export interface QuestionAttributes {
   topicId: string;
 }
 
-const bedrockClient = new BedrockRuntimeClient({});
+const bedrockClient = new BedrockRuntimeClient({ maxAttempts: 1 });
+
+const TRANSIENT_ERROR_NAMES = new Set([
+  'ThrottlingException',
+  'ServiceUnavailableException',
+  'InternalServerException',
+]);
+
+const MAX_BACKOFF_MS = 30_000;
+
+export function isTransientError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    TRANSIENT_ERROR_NAMES.has(error.name) ||
+    (error as { $retryable?: boolean }).$retryable === true
+  );
+}
+
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function invokeWithRetry<T>(
+  operation: () => Promise<T>,
+  attempts: number,
+  sleep: (ms: number) => Promise<void> = delay,
+): Promise<T> {
+  const budget = attempts < 1 ? 1 : attempts;
+
+  for (let attempt = 0; attempt < budget; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= budget - 1 || !isTransientError(error)) {
+        throw error;
+      }
+      const backoffMs = 500 * 2 ** attempt;
+      const jitterMs = Math.floor(Math.random() * 1000);
+      await sleep(Math.min(backoffMs + jitterMs, MAX_BACKOFF_MS));
+    }
+  }
+
+  throw new Error('invokeWithRetry: attempt budget exhausted');
+}
 
 export const QUESTION_PROMPT_TEMPLATE =
   'You are preparing a practice question for the {certificationName} ({certificationCode}) certification. ' +
@@ -182,18 +227,22 @@ export async function generateQuestionRaw(
     prompt,
   });
 
-  const response = await bedrockClient.send(
-    new InvokeModelCommand({
-      modelId,
-      body: Buffer.from(
-        JSON.stringify({
-          prompt,
-          max_tokens: 1024,
+  const response = await invokeWithRetry(
+    () =>
+      bedrockClient.send(
+        new InvokeModelCommand({
+          modelId,
+          body: Buffer.from(
+            JSON.stringify({
+              prompt,
+              max_tokens: 1024,
+            }),
+          ),
+          contentType: 'application/json',
+          accept: 'application/json',
         }),
       ),
-      contentType: 'application/json',
-      accept: 'application/json',
-    }),
+    config.bedrockMaxAttempts,
   );
 
   const responseBody = JSON.parse(Buffer.from(response.body).toString()) as {
