@@ -9,6 +9,8 @@ import {
   generateExamQuestions,
   allocateByWeight,
   allocateByDifficulty,
+  invokeWithRetry,
+  isTransientError,
   QUESTION_PROMPT_TEMPLATE,
   PromptContext,
   QuestionAttributes,
@@ -36,7 +38,7 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
 });
 
 vi.mock('../config.js', () => ({
-  config: { bedrockModelDefault: 'deepseek.v3.2' },
+  config: { bedrockModelDefault: 'deepseek.v3.2', bedrockMaxAttempts: 3 },
 }));
 
 function makeBedrockResponse(text: string): { body: Uint8Array } {
@@ -67,6 +69,73 @@ const baseContext: PromptContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+describe('isTransientError', () => {
+  it('returns true for throttling, service-unavailable, and internal errors', () => {
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ThrottlingException' }))).toBe(true);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailable' }))).toBe(true);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'InternalServerException' }))).toBe(true);
+  });
+
+  it('returns true when the SDK marks the error as retryable', () => {
+    expect(isTransientError(Object.assign(new Error('x'), { $retryable: true }))).toBe(true);
+  });
+
+  it('returns false for permanent errors and non-errors', () => {
+    expect(isTransientError(new Error('boom'))).toBe(false);
+    expect(isTransientError('boom')).toBe(false);
+    expect(isTransientError(undefined)).toBe(false);
+  });
+});
+
+describe('invokeWithRetry', () => {
+  const noopSleep = async (): Promise<void> => {};
+
+  it('returns the operation result on the first attempt', async () => {
+    const operation = vi.fn().mockResolvedValue('ok');
+    await expect(invokeWithRetry(operation, 3, noopSleep)).resolves.toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a transient failure with backoff and returns on success', async () => {
+    const sleeps: number[] = [];
+    const operation = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }))
+      .mockResolvedValueOnce('ok');
+
+    const result = await invokeWithRetry(operation, 3, async (ms) => {
+      sleeps.push(ms);
+    });
+
+    expect(result).toBe('ok');
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(sleeps).toHaveLength(1);
+    expect(sleeps[0]).toBeGreaterThanOrEqual(0);
+  });
+
+  it('fails immediately on a non-transient error', async () => {
+    const operation = vi.fn().mockRejectedValue(new Error('permanent'));
+    await expect(invokeWithRetry(operation, 3, noopSleep)).rejects.toThrow('permanent');
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('exhausts the attempt budget on persistent transient failures', async () => {
+    const operation = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }));
+    await expect(invokeWithRetry(operation, 3, noopSleep)).rejects.toThrow('throttled');
+    expect(operation).toHaveBeenCalledTimes(3);
+  });
+
+  it('treats an attempt budget below one as a single attempt', async () => {
+    const operation = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }));
+    await expect(invokeWithRetry(operation, 0, noopSleep)).rejects.toThrow('throttled');
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('renderPrompt', () => {
@@ -300,6 +369,20 @@ describe('generateQuestionRaw', () => {
     expect(requestBody.prompt).toContain('Billing');
     expect(requestBody.prompt).toContain('Pricing');
     expect(requestBody.prompt).toContain(buildQuestionFormatSpec());
+  });
+
+  it('retries a throttled call through the backoff and returns the recovered text', async () => {
+    vi.useFakeTimers();
+    sendMock
+      .mockRejectedValueOnce(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }))
+      .mockResolvedValueOnce(makeBedrockResponse('recovered'));
+
+    const promise = generateQuestionRaw(config.bedrockModelDefault, baseContext, 'corr-retry');
+    await vi.advanceTimersByTimeAsync(100_000);
+    await expect(promise).resolves.toBe('recovered');
+
+    expect(sendMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
 
