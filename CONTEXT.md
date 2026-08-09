@@ -76,7 +76,7 @@ SQS message sent to generator
 Generator atomically claims exam to status GENERATING
   │
   ▼
-Generator calls Bedrock once per question, sequentially
+Generator calls Bedrock once per question, with bounded concurrency
   │
   ▼
 Generator uploads JSON + PDF to S3
