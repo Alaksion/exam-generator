@@ -40,7 +40,7 @@ vi.mock('@aws-sdk/client-bedrock-runtime', () => {
 
 vi.mock('../config.js', () => ({
   config: {
-    bedrockModelDefault: 'deepseek.v3.2',
+    bedrockModelDefault: 'amazon.nova-lite-v1:0',
     bedrockMaxAttempts: 3,
     bedrockConcurrency: 5,
   },
@@ -51,12 +51,12 @@ function makeBedrockResponse(text: string): { body: Uint8Array } {
     body: Uint8Array.from(
       Buffer.from(
         JSON.stringify({
-          choices: [
-            {
-              text,
-              stop_reason: 'stop',
+          output: {
+            message: {
+              role: 'assistant',
+              content: [{ text }],
             },
-          ],
+          },
         }),
       ),
     ),
@@ -78,10 +78,18 @@ beforeEach(() => {
 
 describe('isTransientError', () => {
   it('returns true for throttling, service-unavailable, and internal errors', () => {
-    expect(isTransientError(Object.assign(new Error('x'), { name: 'ThrottlingException' }))).toBe(true);
-    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailableException' }))).toBe(true);
-    expect(isTransientError(Object.assign(new Error('x'), { name: 'InternalServerException' }))).toBe(true);
-    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailable' }))).toBe(false);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ThrottlingException' }))).toBe(
+      true,
+    );
+    expect(
+      isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailableException' })),
+    ).toBe(true);
+    expect(
+      isTransientError(Object.assign(new Error('x'), { name: 'InternalServerException' })),
+    ).toBe(true);
+    expect(isTransientError(Object.assign(new Error('x'), { name: 'ServiceUnavailable' }))).toBe(
+      false,
+    );
   });
 
   it('returns true when the SDK marks the error as retryable', () => {
@@ -400,10 +408,12 @@ describe('regenerateQuestion', () => {
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as {
-      prompt: string;
+      messages: Array<{ role: string; content: Array<{ text: string }> }>;
+      inferenceConfig: { maxTokens: number };
     };
-    expect(requestBody.prompt).toContain('knowledge domain Security');
-    expect(requestBody.prompt).toContain('topic IAM');
+    expect(requestBody.messages[0].content[0].text).toContain('knowledge domain Security');
+    expect(requestBody.messages[0].content[0].text).toContain('topic IAM');
+    expect(requestBody.inferenceConfig.maxTokens).toBe(4999);
   });
 });
 
@@ -421,11 +431,11 @@ describe('generateQuestionRaw', () => {
     expect(commandInput.modelId).toBe(config.bedrockModelDefault);
 
     const requestBody = JSON.parse(commandInput.body.toString()) as {
-      prompt: string;
+      messages: Array<{ role: string; content: Array<{ text: string }> }>;
     };
-    expect(requestBody.prompt).toContain('Billing');
-    expect(requestBody.prompt).toContain('Pricing');
-    expect(requestBody.prompt).toContain(buildQuestionFormatSpec());
+    expect(requestBody.messages[0].content[0].text).toContain('Billing');
+    expect(requestBody.messages[0].content[0].text).toContain('Pricing');
+    expect(requestBody.messages[0].content[0].text).toContain(buildQuestionFormatSpec());
   });
 
   it('retries a throttled call through the backoff and returns the recovered text', async () => {
@@ -469,8 +479,10 @@ describe('generateExamQuestions', () => {
 
   it('keeps responses aligned to question order when calls complete out of order', async () => {
     sendMock.mockImplementation(async (command: { body: Buffer }) => {
-      const parsed = JSON.parse(command.body.toString()) as { prompt: string };
-      const match = parsed.prompt.match(/question number (\d+)/);
+      const parsed = JSON.parse(command.body.toString()) as {
+        messages: Array<{ role: string; content: Array<{ text: string }> }>;
+      };
+      const match = parsed.messages[0].content[0].text.match(/question number (\d+)/);
       const number = match ? Number(match[1]) : 0;
       await new Promise((resolve) => setTimeout(resolve, (12 - number) * 10));
       return makeBedrockResponse(`q${number}`);
@@ -478,8 +490,6 @@ describe('generateExamQuestions', () => {
 
     const rawResponses = await generateExamQuestions(exam, certification, 'corr-order');
 
-    expect(rawResponses).toEqual(
-      Array.from({ length: questionCount }, (_, i) => `q${i + 1}`),
-    );
+    expect(rawResponses).toEqual(Array.from({ length: questionCount }, (_, i) => `q${i + 1}`));
   });
 });

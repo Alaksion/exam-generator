@@ -14,7 +14,7 @@ Parameters:
     MinLength: 1
   BedrockModelDefault:
     Type: String
-    Default: anthropic.claude-3-haiku-20240307-v1:0
+    Default: amazon.nova-lite-v1:0
     Description: Default Bedrock model used when a certification does not specify one.
   ApiThrottleRateLimit:
     Type: Number

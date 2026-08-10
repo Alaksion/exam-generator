@@ -5,7 +5,11 @@ import { config } from '../shared/config.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { transitionExamStatus } from '../shared/services/exam.js';
-import { generateExamQuestions, buildQuestionContexts, regenerateQuestion } from '../shared/services/bedrock.js';
+import {
+  generateExamQuestions,
+  buildQuestionContexts,
+  regenerateQuestion,
+} from '../shared/services/bedrock.js';
 import { parseExamQuestions } from '../shared/services/questionParser.js';
 
 import { renderExamPdf } from '../shared/services/pdfRenderer.js';
@@ -14,7 +18,11 @@ export const CANONICAL_EXAM_SCHEMA_VERSION = '2.0.0';
 
 const s3Client = new S3Client({});
 
-export function buildArtifactKeys(examId: string): { s3KeyJson: string; s3KeyPdf: string; s3KeyRaw: string } {
+export function buildArtifactKeys(examId: string): {
+  s3KeyJson: string;
+  s3KeyPdf: string;
+  s3KeyRaw: string;
+} {
   return {
     s3KeyJson: `exams/${examId}/exam.json`,
     s3KeyPdf: `exams/${examId}/exam.pdf`,
@@ -40,6 +48,7 @@ export const handler = async (event: SQSEvent): Promise<void> => {
 };
 
 async function processRecord(record: SQSRecord): Promise<void> {
+  console.info('Processing record', { messageId: record.messageId, body: record.body });
   const payload = JSON.parse(record.body) as unknown;
   const message = GeneratorMessage.parse(payload);
 
@@ -66,13 +75,27 @@ async function processRecord(record: SQSRecord): Promise<void> {
   }
   const generating = transitionExamStatus(exam, 'GENERATING');
 
+  console.info('Transitioned record to generating', {
+    messageId: message.examId,
+    certificationId: message.certificationId,
+  });
+
   try {
     const certification = await getCertificationById(message.certificationId);
     if (!certification) {
       throw new Error('Certification not found');
     }
 
-    const rawResponses = await generateExamQuestions(generating, certification, message.correlationId);
+    console.info('Starting question generation', {
+      messageId: message.examId,
+      certificationId: message.certificationId,
+    });
+
+    const rawResponses = await generateExamQuestions(
+      generating,
+      certification,
+      message.correlationId,
+    );
     const contexts = buildQuestionContexts(certification.config);
     const questions = await parseExamQuestions(rawResponses, contexts, async (context) =>
       regenerateQuestion(context, certification, message.correlationId),

@@ -1,5 +1,11 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
-import { Certification, Exam, Difficulty, DifficultyDistribution, KnowledgeDomain } from '../types.js';
+import {
+  Certification,
+  Exam,
+  Difficulty,
+  DifficultyDistribution,
+  KnowledgeDomain,
+} from '../types.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
 
@@ -36,8 +42,7 @@ export function isTransientError(error: unknown): boolean {
     return false;
   }
   return (
-    TRANSIENT_ERROR_NAMES.has(error.name) ||
-    (error as { $retryable?: boolean }).$retryable === true
+    TRANSIENT_ERROR_NAMES.has(error.name) || (error as { $retryable?: boolean }).$retryable === true
   );
 }
 
@@ -126,19 +131,14 @@ export function renderPrompt(template: string, context: PromptContext): string {
   });
 }
 
-export function allocateByWeight(
-  questionCount: number,
-  domains: KnowledgeDomain[],
-): number[] {
+export function allocateByWeight(questionCount: number, domains: KnowledgeDomain[]): number[] {
   const exact = domains.map((domain) => (domain.weight / 100) * questionCount);
   const counts = exact.map(Math.floor);
   const remaining = questionCount - counts.reduce((a, b) => a + b, 0);
 
   const order = domains
     .map((_, index) => index)
-    .sort(
-      (a, b) => exact[b] - Math.floor(exact[b]) - (exact[a] - Math.floor(exact[a])),
-    );
+    .sort((a, b) => exact[b] - Math.floor(exact[b]) - (exact[a] - Math.floor(exact[a])));
 
   for (let i = 0; i < remaining && i < order.length; i++) {
     counts[order[i]] += 1;
@@ -271,8 +271,15 @@ export async function generateQuestionRaw(
           modelId,
           body: Buffer.from(
             JSON.stringify({
-              prompt,
-              max_tokens: 1024,
+              messages: [
+                {
+                  role: 'user',
+                  content: [{ text: prompt }],
+                },
+              ],
+              inferenceConfig: {
+                maxTokens: 4999,
+              },
             }),
           ),
           contentType: 'application/json',
@@ -283,9 +290,9 @@ export async function generateQuestionRaw(
   );
 
   const responseBody = JSON.parse(Buffer.from(response.body).toString()) as {
-    choices?: Array<{ text?: string }>;
+    output?: { message?: { content?: Array<{ text?: string }> } };
   };
-  return responseBody.choices?.[0]?.text ?? '';
+  return responseBody.output?.message?.content?.[0]?.text ?? '';
 }
 
 export async function generateExamQuestions(
@@ -298,12 +305,21 @@ export async function generateExamQuestions(
   const rawResponses = await mapWithConcurrency(
     attributes,
     config.bedrockConcurrency,
-    async (attribute) =>
-      generateQuestionRaw(
+    async (attribute) => {
+      console.info('Generating question', {
+        correlationId,
+        examId: exam.id,
+        questionNumber: attribute.number,
+        difficulty: attribute.difficulty,
+        knowledgeDomain: attribute.domain,
+        topic: attribute.topic,
+      });
+      return await generateQuestionRaw(
         config.bedrockModelDefault,
         buildPromptContext(attribute, certification),
         correlationId,
-      ),
+      );
+    },
   );
 
   console.info('Completed Bedrock generation', {
