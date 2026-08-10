@@ -14,12 +14,11 @@ import {
   mapWithConcurrency,
   QUESTION_PROMPT_TEMPLATE,
   PromptContext,
-  QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
-import { Difficulty, KnowledgeDomain } from '../types.js';
+import { Difficulty, KnowledgeDomain, QuestionAttributes } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 

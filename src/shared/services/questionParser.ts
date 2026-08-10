@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import type { Question } from '../types.js';
-import type { QuestionAttributes } from './bedrock.js';
+import type { Question, QuestionAttributes } from '../types.js';
 
 export const ParsedQuestionSchema = z
   .object({
@@ -21,8 +20,6 @@ export const ParsedQuestionSchema = z
   .refine((question) => question.options.filter((option) => option.isCorrect).length === 1, {
     message: 'Exactly one option must be correct',
   });
-
-export type QuestionContext = QuestionAttributes;
 
 export function buildQuestionFormatSpec(): string {
   const inner = ParsedQuestionSchema.innerType();
@@ -64,7 +61,7 @@ function buildOptionExample(keys: string[], isCorrect: boolean): Record<string, 
   return option;
 }
 
-export function parseQuestion(rawResponse: string, context: QuestionContext): Question | null {
+export function parseQuestion(rawResponse: string, context: QuestionAttributes): Question | null {
   const parsed = extractJson(rawResponse);
   if (!parsed) {
     return null;
@@ -98,8 +95,8 @@ export function parseQuestion(rawResponse: string, context: QuestionContext): Qu
 
 export async function parseExamQuestions(
   rawResponses: string[],
-  contexts: QuestionContext[],
-  regenerate: (context: QuestionContext) => Promise<string>,
+  contexts: QuestionAttributes[],
+  regenerate: (context: QuestionAttributes) => Promise<string>,
 ): Promise<Question[] | null> {
   const questions: Question[] = [];
 

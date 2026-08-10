@@ -143,3 +143,13 @@ export const GeneratorMessage = z.object({
   correlationId: z.string().min(1),
 });
 export type GeneratorMessage = z.infer<typeof GeneratorMessage>;
+
+export interface QuestionAttributes {
+  number: number;
+  difficulty: Difficulty;
+  domain: string;
+  domainId: string;
+  topic: string;
+  topicId: string;
+  topicContext: TopicContext;
+}

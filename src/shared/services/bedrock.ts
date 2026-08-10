@@ -5,6 +5,8 @@ import {
   Difficulty,
   DifficultyDistribution,
   KnowledgeDomain,
+  QuestionAttributes,
+  TopicContext,
 } from '../types.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
@@ -14,19 +16,9 @@ export interface PromptContext {
   difficulty: Difficulty;
   knowledgeDomain: string;
   topic: string;
-  topicContext: string;
+  topicContext: TopicContext;
   certificationName: string;
   certificationCode: string;
-}
-
-export interface QuestionAttributes {
-  number: number;
-  difficulty: Difficulty;
-  domain: string;
-  domainId: string;
-  topic: string;
-  topicId: string;
-  topicContext: string;
 }
 
 const bedrockClient = new BedrockRuntimeClient({ maxAttempts: 1 });
@@ -319,7 +311,6 @@ export async function generateExamQuestions(
         difficulty: attribute.difficulty,
         knowledgeDomain: attribute.domain,
         topic: attribute.topic,
-        topicContext: attribute.topicContext,
       });
       return await generateQuestionRaw(
         config.bedrockModelDefault,
