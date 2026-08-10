@@ -305,12 +305,21 @@ export async function generateExamQuestions(
   const rawResponses = await mapWithConcurrency(
     attributes,
     config.bedrockConcurrency,
-    async (attribute) =>
-      generateQuestionRaw(
+    async (attribute) => {
+      console.info('Generating question', {
+        correlationId,
+        examId: exam.id,
+        questionNumber: attribute.number,
+        difficulty: attribute.difficulty,
+        knowledgeDomain: attribute.domain,
+        topic: attribute.topic,
+      });
+      return await generateQuestionRaw(
         config.bedrockModelDefault,
         buildPromptContext(attribute, certification),
         correlationId,
-      ),
+      );
+    },
   );
 
   console.info('Completed Bedrock generation', {
