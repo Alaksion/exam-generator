@@ -39,6 +39,8 @@ const context = {
   domainId: '22222222-2222-2222-2222-222222222222',
   topic: 'Amazon S3',
   topicId: '33333333-3333-3333-3333-333333333333',
+  topicContext:
+    'Amazon S3 is AWS persistent object storage. Covers the storage classes, bucket policies, versioning, lifecycle rules, static website hosting, and encryption at rest and in transit.',
 };
 
 const securityContext = {
@@ -48,6 +50,8 @@ const securityContext = {
   domainId: '55555555-5555-5555-5555-555555555555',
   topic: 'IAM',
   topicId: '66666666-6666-6666-6666-666666666666',
+  topicContext:
+    'IAM controls who can access AWS and what they can do. Covers users, groups and roles, policies, the principle of least privilege, access management, and multi-factor authentication.',
 };
 
 describe('ParsedQuestionSchema', () => {
