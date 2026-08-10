@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import type { Question, Difficulty } from '../types.js';
+import type { Question } from '../types.js';
+import type { QuestionAttributes } from './bedrock.js';
 
 export const ParsedQuestionSchema = z
   .object({
@@ -21,14 +22,7 @@ export const ParsedQuestionSchema = z
     message: 'Exactly one option must be correct',
   });
 
-export interface QuestionContext {
-  number: number;
-  difficulty: Difficulty;
-  domain: string;
-  domainId: string;
-  topic: string;
-  topicId: string;
-}
+export type QuestionContext = QuestionAttributes;
 
 export function buildQuestionFormatSpec(): string {
   const inner = ParsedQuestionSchema.innerType();
