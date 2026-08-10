@@ -209,6 +209,82 @@ describe('createCertification', () => {
     );
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
+
+  it('rejects a topic submitted as a bare string instead of a { name, context } object', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    const input = {
+      ...certificationInput,
+      config: {
+        ...certificationInput.config,
+        domains: [
+          { name: 'Cloud Concepts', weight: 100, topics: ['Amazon S3'] },
+        ],
+      },
+    };
+
+    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    expect(createCertificationRecord).not.toHaveBeenCalled();
+  });
+
+  it('rejects a topic with a missing context', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    const input = {
+      ...certificationInput,
+      config: {
+        ...certificationInput.config,
+        domains: [
+          { name: 'Cloud Concepts', weight: 100, topics: [{ name: 'Amazon S3' }] },
+        ],
+      },
+    };
+
+    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    expect(createCertificationRecord).not.toHaveBeenCalled();
+  });
+
+  it('rejects a topic with a context shorter than 20 characters', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    const input = {
+      ...certificationInput,
+      config: {
+        ...certificationInput.config,
+        domains: [
+          {
+            name: 'Cloud Concepts',
+            weight: 100,
+            topics: [{ name: 'Amazon S3', context: 'Object storage.' }],
+          },
+        ],
+      },
+    };
+
+    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    expect(createCertificationRecord).not.toHaveBeenCalled();
+  });
+
+  it('rejects a topic with a context longer than 1500 characters', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    const input = {
+      ...certificationInput,
+      config: {
+        ...certificationInput.config,
+        domains: [
+          {
+            name: 'Cloud Concepts',
+            weight: 100,
+            topics: [{ name: 'Amazon S3', context: 'x'.repeat(1501) }],
+          },
+        ],
+      },
+    };
+
+    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    expect(createCertificationRecord).not.toHaveBeenCalled();
+  });
 });
 
 describe('updateCertificationById', () => {
@@ -245,8 +321,23 @@ describe('updateCertificationById', () => {
         ...certificationUpdate.config,
         difficultyDistribution: { easy: 20, medium: 50, hard: 30 },
         domains: [
-          { name: 'Cloud Concepts', weight: 60, topics: ['Amazon S3', 'Amazon RDS'] },
-          { name: 'Billing', weight: 40, topics: ['Pricing'] },
+          {
+            name: 'Cloud Concepts',
+            weight: 60,
+            topics: [
+              { name: 'Amazon S3', context: certificationUpdate.config.domains[0].topics[0].context },
+              {
+                name: 'Amazon RDS',
+                context:
+                  'Amazon RDS is a managed relational database service. Covers supported database engines, Multi-AZ deployments for high availability, read replicas, automated backups and point-in-time recovery, security groups and encryption.',
+              },
+            ],
+          },
+          {
+            name: 'Billing',
+            weight: 40,
+            topics: [{ name: 'Pricing', context: certificationUpdate.config.domains[2].topics[0].context }],
+          },
         ],
       },
     };
@@ -263,6 +354,31 @@ describe('updateCertificationById', () => {
 
     const billing = result.config.domains.find((d) => d.name === 'Billing');
     expect(billing?.id).toBe('88888888-8888-8888-8888-888888888888');
+  });
+
+  it('adopts the client-supplied context for a matched topic while preserving its id', async () => {
+    mockedGetById.mockResolvedValue(certification);
+    mockedUpdateRecord.mockResolvedValue(undefined);
+
+    const rewrittenContext =
+      'Amazon S3 provides durable object storage for any amount of data. Covers buckets, the S3 storage classes and lifecycle transitions, versioning, bucket policies and ACLs, static website hosting, and server-side encryption options.';
+    const data = {
+      ...certificationUpdate,
+      config: {
+        ...certificationUpdate.config,
+        domains: [
+          { name: 'Cloud Concepts', weight: 50, topics: [{ name: 'Amazon S3', context: rewrittenContext }] },
+          ...certificationUpdate.config.domains.slice(1),
+        ],
+      },
+    };
+
+    const result = await updateCertificationById(certification.id, data);
+
+    const s3 = result.config.domains[0].topics.find((t) => t.name === 'Amazon S3');
+    expect(s3?.id).toBe('33333333-3333-3333-3333-333333333333');
+    expect(s3?.context).toBe(rewrittenContext);
+    expect(s3?.name).toBe('Amazon S3');
   });
 
   it('throws InvalidRequestError when provider is in the body', async () => {
