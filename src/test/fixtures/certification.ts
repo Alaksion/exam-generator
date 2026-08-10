@@ -1,5 +1,14 @@
 import { Certification } from '../../shared/types.js';
 
+function topicContext(domainName: string, topicName: string): string {
+  const domain = certificationInput.config.domains.find((d) => d.name === domainName);
+  const topic = domain?.topics.find((t) => t.name === topicName);
+  if (!topic) {
+    throw new Error(`Fixture topic not found: ${domainName}/${topicName}`);
+  }
+  return topic.context;
+}
+
 export const certificationInput = {
   provider: 'aws' as const,
   code: 'CLF-C02',
@@ -70,11 +79,13 @@ export const certification: Certification = {
         topics: [
           {
             id: '33333333-3333-3333-3333-333333333333',
-            ...certificationInput.config.domains[0].topics[0],
+            name: 'Amazon S3',
+            context: topicContext('Cloud Concepts', 'Amazon S3'),
           },
           {
             id: '44444444-4444-4444-4444-444444444444',
-            ...certificationInput.config.domains[0].topics[1],
+            name: 'Amazon EC2',
+            context: topicContext('Cloud Concepts', 'Amazon EC2'),
           },
         ],
       },
@@ -85,11 +96,13 @@ export const certification: Certification = {
         topics: [
           {
             id: '66666666-6666-6666-6666-666666666666',
-            ...certificationInput.config.domains[1].topics[0],
+            name: 'IAM',
+            context: topicContext('Security', 'IAM'),
           },
           {
             id: '77777777-7777-7777-7777-777777777777',
-            ...certificationInput.config.domains[1].topics[1],
+            name: 'Shared Responsibility',
+            context: topicContext('Security', 'Shared Responsibility'),
           },
         ],
       },
@@ -100,7 +113,8 @@ export const certification: Certification = {
         topics: [
           {
             id: '99999999-9999-9999-9999-999999999999',
-            ...certificationInput.config.domains[2].topics[0],
+            name: 'Pricing',
+            context: topicContext('Billing', 'Pricing'),
           },
         ],
       },

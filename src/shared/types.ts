@@ -22,7 +22,7 @@ export const DifficultyDistribution = z
   });
 export type DifficultyDistribution = z.infer<typeof DifficultyDistribution>;
 
-export const TopicContext = z.string().min(20).max(1500);
+export const TopicContext = z.string().trim().min(20).max(1500);
 export type TopicContext = z.infer<typeof TopicContext>;
 
 export const Topic = z.object({

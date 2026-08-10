@@ -214,17 +214,25 @@ describe('GET /v1/certifications', () => {
 });
 
 describe('GET /v1/certifications/{id}', () => {
-  it('returns the certification without promptTemplate', async () => {
+  it('returns the certification with topic context', async () => {
     mockedGetById.mockResolvedValue(certification);
 
     const result = (await handler(
       makeEvent('GET', '/v1/certifications/11111111-1111-1111-1111-111111111111'),
     ));
-    const body = JSON.parse(result.body ?? '{}') as { id: string; config: object };
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      config: { domains: Array<{ topics: Array<{ name: string; context: string }> }> };
+    };
 
     expect(result.statusCode).toBe(200);
     expect(body.id).toBe('11111111-1111-1111-1111-111111111111');
     expect(body.config).not.toHaveProperty('promptTemplate');
+    const topics = body.config.domains.flatMap((domain) => domain.topics);
+    expect(topics).toHaveLength(5);
+    for (const topic of topics) {
+      expect(topic.context.length).toBeGreaterThanOrEqual(20);
+    }
   });
 
   it('returns 404 Not Found for unknown id', async () => {

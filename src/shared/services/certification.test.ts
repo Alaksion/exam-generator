@@ -210,79 +210,59 @@ describe('createCertification', () => {
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 
-  it('rejects a topic submitted as a bare string instead of a { name, context } object', async () => {
-    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
-
-    const input = {
+  function inputWithDomains(topics: unknown[]): unknown {
+    return {
       ...certificationInput,
       config: {
         ...certificationInput.config,
-        domains: [
-          { name: 'Cloud Concepts', weight: 100, topics: ['Amazon S3'] },
-        ],
+        domains: [{ name: 'Cloud Concepts', weight: 100, topics }],
       },
     };
+  }
 
-    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+  it('rejects a topic submitted as a bare string instead of a { name, context } object', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    await expect(createCertification(inputWithDomains(['Amazon S3']))).rejects.toThrow(z.ZodError);
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 
   it('rejects a topic with a missing context', async () => {
     vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
 
-    const input = {
-      ...certificationInput,
-      config: {
-        ...certificationInput.config,
-        domains: [
-          { name: 'Cloud Concepts', weight: 100, topics: [{ name: 'Amazon S3' }] },
-        ],
-      },
-    };
+    await expect(createCertification(inputWithDomains([{ name: 'Amazon S3' }]))).rejects.toThrow(
+      z.ZodError,
+    );
+    expect(createCertificationRecord).not.toHaveBeenCalled();
+  });
 
-    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+  it('rejects a topic with an empty or whitespace-only context', async () => {
+    vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
+
+    await expect(createCertification(inputWithDomains([{ name: 'Amazon S3', context: '' }]))).rejects.toThrow(
+      z.ZodError,
+    );
+    await expect(
+      createCertification(inputWithDomains([{ name: 'Amazon S3', context: ' '.repeat(40) }])),
+    ).rejects.toThrow(z.ZodError);
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 
   it('rejects a topic with a context shorter than 20 characters', async () => {
     vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
 
-    const input = {
-      ...certificationInput,
-      config: {
-        ...certificationInput.config,
-        domains: [
-          {
-            name: 'Cloud Concepts',
-            weight: 100,
-            topics: [{ name: 'Amazon S3', context: 'Object storage.' }],
-          },
-        ],
-      },
-    };
-
-    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    await expect(
+      createCertification(inputWithDomains([{ name: 'Amazon S3', context: 'Object storage.' }])),
+    ).rejects.toThrow(z.ZodError);
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 
   it('rejects a topic with a context longer than 1500 characters', async () => {
     vi.mocked(getCertificationByProviderCode).mockResolvedValue(null);
 
-    const input = {
-      ...certificationInput,
-      config: {
-        ...certificationInput.config,
-        domains: [
-          {
-            name: 'Cloud Concepts',
-            weight: 100,
-            topics: [{ name: 'Amazon S3', context: 'x'.repeat(1501) }],
-          },
-        ],
-      },
-    };
-
-    await expect(createCertification(input)).rejects.toThrow(z.ZodError);
+    await expect(
+      createCertification(inputWithDomains([{ name: 'Amazon S3', context: 'x'.repeat(1501) }])),
+    ).rejects.toThrow(z.ZodError);
     expect(createCertificationRecord).not.toHaveBeenCalled();
   });
 });

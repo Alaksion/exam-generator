@@ -126,6 +126,19 @@ curl -H "x-api-key: $EXAM_GENERATOR_API_KEY" \
      "${API_URL}/v1/exams"
 ```
 
+### 6. Seed the certification catalog
+
+The catalog needs at least one Certification before exams can be generated. Seed the AWS Cloud
+Practitioner record (the seed data lives in `src/test/fixtures/certification.ts`):
+
+```bash
+export DYNAMODB_CERTIFICATIONS_TABLE=$(aws cloudformation describe-stacks --stack-name exam-generator \
+  --query "Stacks[0].Outputs[?OutputKey=='CertificationsTableName'].OutputValue" --output text)
+npm run seed:certifications
+```
+
+Re-running is safe and idempotent — the record uses stable ids and is overwritten.
+
 ## Project layout
 
 ```
