@@ -148,13 +148,16 @@ describe('POST /v1/certifications', () => {
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
-      config: object;
+      config: { domains: Array<{ topics: Array<{ name: string; context: string }> }> };
     };
 
     expect(result.statusCode).toBe(201);
     expect(body.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(body.provider).toBe('aws');
     expect(body.config).not.toHaveProperty('promptTemplate');
+    expect(body.config.domains[0].topics[0].context).toBe(
+      certificationInput.config.domains[0].topics[0].context,
+    );
     expect(mockedCreateRecord).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: 'aws',
@@ -200,21 +203,36 @@ describe('GET /v1/certifications', () => {
     expect(result.statusCode).toBe(200);
     expect(body.items).toHaveLength(1);
     expect(body.items[0].config).not.toHaveProperty('promptTemplate');
+    const topics = (body.items[0].config as { domains: Array<{ topics: unknown[] }> }).domains.flatMap(
+      (domain) => domain.topics,
+    );
+    expect(topics).toHaveLength(5);
+    for (const topic of topics) {
+      expect(topic).toHaveProperty('context');
+    }
   });
 });
 
 describe('GET /v1/certifications/{id}', () => {
-  it('returns the certification without promptTemplate', async () => {
+  it('returns the certification with topic context', async () => {
     mockedGetById.mockResolvedValue(certification);
 
     const result = (await handler(
       makeEvent('GET', '/v1/certifications/11111111-1111-1111-1111-111111111111'),
     ));
-    const body = JSON.parse(result.body ?? '{}') as { id: string; config: object };
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      config: { domains: Array<{ topics: Array<{ name: string; context: string }> }> };
+    };
 
     expect(result.statusCode).toBe(200);
     expect(body.id).toBe('11111111-1111-1111-1111-111111111111');
     expect(body.config).not.toHaveProperty('promptTemplate');
+    const topics = body.config.domains.flatMap((domain) => domain.topics);
+    expect(topics).toHaveLength(5);
+    for (const topic of topics) {
+      expect(topic.context.length).toBeGreaterThanOrEqual(20);
+    }
   });
 
   it('returns 404 Not Found for unknown id', async () => {

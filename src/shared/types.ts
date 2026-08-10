@@ -22,11 +22,21 @@ export const DifficultyDistribution = z
   });
 export type DifficultyDistribution = z.infer<typeof DifficultyDistribution>;
 
+export const TopicContext = z.string().trim().min(20).max(1500);
+export type TopicContext = z.infer<typeof TopicContext>;
+
 export const Topic = z.object({
   id: z.string().uuid(),
   name: z.string().min(1),
+  context: TopicContext,
 });
 export type Topic = z.infer<typeof Topic>;
+
+export const TopicInput = z.object({
+  name: z.string().min(1),
+  context: TopicContext,
+});
+export type TopicInput = z.infer<typeof TopicInput>;
 
 export const KnowledgeDomain = z.object({
   id: z.string().uuid(),
@@ -70,7 +80,7 @@ export type Certification = z.infer<typeof Certification>;
 export const DomainInput = z.object({
   name: z.string().min(1),
   weight: z.number().int().min(1),
-  topics: z.array(z.string().min(1)),
+  topics: z.array(TopicInput),
 });
 export type DomainInput = z.infer<typeof DomainInput>;
 

@@ -17,6 +17,7 @@ Authentication, pricing, analytics, and failure handling are explicitly out of s
 - **Certification** — A catalog entry describing an IT certification exam that can be generated. It holds the provider, exam code, human-readable name, and the configuration used by the generator.
 - **Knowledge Domain** — A weighted knowledge area within a certification, e.g. `Cloud Concepts`. Each domain carries a weight (percent) and a list of topics.
 - **Topic** — A subtopic attached to a knowledge domain, e.g. `Amazon S3`. Topics scope individual generated questions.
+- **Topic Context** — Free-form prose attached to a `Topic` describing what the topic actually covers. Required and bounded (20–1500 characters); injected into the generator prompt as a hard scope boundary.
 - **Exam** — A generated, immutable practice exam. This is the primary artifact produced by the system.
 - **Question** — A single item inside an `Exam`. The MVP supports only single-answer multiple-choice questions.
 - **AnswerOption** — One possible answer for a `Question`. It carries a display label, the answer text, and a flag indicating whether it is the correct answer.
@@ -39,7 +40,7 @@ Core fields:
 - `config` — generation configuration:
   - `questionCount` — number of questions per exam.
   - `difficultyDistribution` — map of `easy`/`medium`/`hard` integer percents that must sum to `100`. Global to the certification, applied within every knowledge domain.
-  - `domains` — list of weighted knowledge domains: `[{ id, name, weight, topics: [{ id, name }] }]`. Each `weight` is an integer percent; weights must sum to `100`. The `id`s are system-generated. Topics are scoped to their domain.
+  - `domains` — list of weighted knowledge domains: `[{ id, name, weight, topics: [{ id, name, context }] }]`. Each `weight` is an integer percent; weights must sum to `100`. The `id`s are system-generated. Topics are scoped to their domain; a topic's `context` is required prose that scopes generated questions (see ADR-0003).
   - The `modelId` and `promptTemplate` config fields are removed: the model is an application-level concern (global default) and prompt engineering is centralized in a single generator prompt.
 
 Lifecycle: created and updated through a public, API-key-protected endpoint. `provider` and `code` are immutable after creation. Deletion is not supported; set `isActive` to `false` instead.
