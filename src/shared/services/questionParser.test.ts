@@ -5,6 +5,7 @@ import {
   ParsedQuestionSchema,
   buildQuestionFormatSpec,
 } from './questionParser.js';
+import { certification } from '../../test/fixtures/certification.js';
 
 let uuidCounter = 0;
 
@@ -39,6 +40,7 @@ const context = {
   domainId: '22222222-2222-2222-2222-222222222222',
   topic: 'Amazon S3',
   topicId: '33333333-3333-3333-3333-333333333333',
+  topicContext: certification.config.domains[0].topics.find((t) => t.name === 'Amazon S3')!.context,
 };
 
 const securityContext = {
@@ -48,6 +50,7 @@ const securityContext = {
   domainId: '55555555-5555-5555-5555-555555555555',
   topic: 'IAM',
   topicId: '66666666-6666-6666-6666-666666666666',
+  topicContext: certification.config.domains.find((d) => d.name === 'Security')!.topics.find((t) => t.name === 'IAM')!.context,
 };
 
 describe('ParsedQuestionSchema', () => {

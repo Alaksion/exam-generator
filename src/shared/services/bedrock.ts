@@ -5,6 +5,8 @@ import {
   Difficulty,
   DifficultyDistribution,
   KnowledgeDomain,
+  QuestionAttributes,
+  TopicContext,
 } from '../types.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
@@ -14,17 +16,9 @@ export interface PromptContext {
   difficulty: Difficulty;
   knowledgeDomain: string;
   topic: string;
+  topicContext: TopicContext;
   certificationName: string;
   certificationCode: string;
-}
-
-export interface QuestionAttributes {
-  number: number;
-  difficulty: Difficulty;
-  domain: string;
-  domainId: string;
-  topic: string;
-  topicId: string;
 }
 
 const bedrockClient = new BedrockRuntimeClient({ maxAttempts: 1 });
@@ -114,6 +108,7 @@ export const QUESTION_PROMPT_TEMPLATE =
   'You are preparing a practice question for the {certificationName} ({certificationCode}) certification. ' +
   'Limit the scope of the question to the level of knowledge expected of a candidate sitting this certification. ' +
   'Generate a single question scoped to the knowledge domain {knowledgeDomain} and topic {topic}. ' +
+  'The question must stay strictly within the scope described by this topic context: {topicContext}. ' +
   'The difficulty of the question must be {difficulty}. This is question number {questionNumber}. ' +
   'Return ONLY a strict JSON object in the exact format specified below.';
 
@@ -214,6 +209,7 @@ export function buildQuestionContexts(
         domainId: domain.id,
         topic: topic.name,
         topicId: topic.id,
+        topicContext: topic.context,
       });
     }
   });
@@ -230,6 +226,7 @@ export function buildPromptContext(
     difficulty: context.difficulty,
     knowledgeDomain: context.domain,
     topic: context.topic,
+    topicContext: context.topicContext,
     certificationName: certification.name,
     certificationCode: certification.code,
   };
@@ -261,6 +258,7 @@ export async function generateQuestionRaw(
     difficulty: context.difficulty,
     knowledgeDomain: context.knowledgeDomain,
     topic: context.topic,
+    topicContext: context.topicContext,
     prompt,
   });
 

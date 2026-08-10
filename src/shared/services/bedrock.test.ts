@@ -14,12 +14,11 @@ import {
   mapWithConcurrency,
   QUESTION_PROMPT_TEMPLATE,
   PromptContext,
-  QuestionAttributes,
 } from './bedrock.js';
 import { certification } from '../../test/fixtures/certification.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
-import { Difficulty, KnowledgeDomain } from '../types.js';
+import { Difficulty, KnowledgeDomain, QuestionAttributes } from '../types.js';
 
 const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
 
@@ -68,6 +67,7 @@ const baseContext: PromptContext = {
   difficulty: 'hard',
   knowledgeDomain: 'Billing',
   topic: 'Pricing',
+  topicContext: certification.config.domains[2].topics[0].context,
   certificationName: 'AWS Certified Cloud Practitioner',
   certificationCode: 'CLF-C02',
 };
@@ -239,6 +239,16 @@ describe('QUESTION_PROMPT_TEMPLATE / buildQuestionPrompt', () => {
     expect(prompt).toContain(buildQuestionFormatSpec());
     expect(prompt).not.toContain('{certificationName}');
   });
+
+  it('renders a hard scope boundary embedding the exact topic context', () => {
+    const prompt = buildQuestionPrompt(baseContext);
+
+    expect(prompt).toContain(
+      'The question must stay strictly within the scope described by this topic context:',
+    );
+    expect(prompt).toContain(baseContext.topicContext);
+    expect(prompt).not.toContain('{topicContext}');
+  });
 });
 
 describe('allocateByWeight', () => {
@@ -332,6 +342,21 @@ describe('buildQuestionContexts', () => {
     }
   });
 
+  it('carries the selected topic context on every question slot', () => {
+    const attributes = buildQuestionContexts(certification.config);
+    const topicByKey = new Map(
+      certification.config.domains.flatMap((domain) =>
+        domain.topics.map((topic) => [`${domain.name}/${topic.name}`, topic]),
+      ),
+    );
+
+    for (const attr of attributes) {
+      const topic = topicByKey.get(`${attr.domain}/${attr.topic}`);
+      expect(topic).toBeDefined();
+      expect(attr.topicContext).toBe(topic!.context);
+    }
+  });
+
   it('selects topics without replacement per domain, cycling when count exceeds topics', () => {
     const attributes = buildQuestionContexts(certification.config);
     const cloud = attributes.filter((attr) => attr.domain === 'Cloud Concepts');
@@ -362,7 +387,7 @@ describe('buildQuestionContexts', () => {
 });
 
 describe('buildPromptContext', () => {
-  it('combines question attributes with certification metadata including topic', () => {
+  it('combines question attributes with certification metadata including topic and topic context', () => {
     const attributes: QuestionAttributes = {
       number: 1,
       difficulty: 'medium',
@@ -370,6 +395,7 @@ describe('buildPromptContext', () => {
       domainId: '22222222-2222-2222-2222-222222222222',
       topic: 'Amazon S3',
       topicId: '33333333-3333-3333-3333-333333333333',
+      topicContext: certification.config.domains[0].topics[0].context,
     };
 
     const context = buildPromptContext(attributes, certification);
@@ -379,6 +405,7 @@ describe('buildPromptContext', () => {
       difficulty: 'medium',
       knowledgeDomain: 'Cloud Concepts',
       topic: 'Amazon S3',
+      topicContext: attributes.topicContext,
       certificationName: certification.name,
       certificationCode: certification.code,
     });
@@ -396,6 +423,7 @@ describe('regenerateQuestion', () => {
       domainId: '55555555-5555-5555-5555-555555555555',
       topic: 'IAM',
       topicId: '66666666-6666-6666-6666-666666666666',
+      topicContext: certification.config.domains[1].topics[0].context,
     };
 
     const raw = await regenerateQuestion(attributes, certification, 'corr-retry');
@@ -413,6 +441,10 @@ describe('regenerateQuestion', () => {
     };
     expect(requestBody.messages[0].content[0].text).toContain('knowledge domain Security');
     expect(requestBody.messages[0].content[0].text).toContain('topic IAM');
+    expect(requestBody.messages[0].content[0].text).toContain(attributes.topicContext);
+    expect(requestBody.messages[0].content[0].text).toContain(
+      'The question must stay strictly within the scope described by this topic context:',
+    );
     expect(requestBody.inferenceConfig.maxTokens).toBe(4999);
   });
 });
@@ -450,6 +482,18 @@ describe('generateQuestionRaw', () => {
 
     expect(sendMock).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
+  });
+
+  it('logs the topic context alongside the rendered prompt', async () => {
+    sendMock.mockResolvedValue(makeBedrockResponse('raw question text'));
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    await generateQuestionRaw(config.bedrockModelDefault, baseContext, 'corr-log');
+
+    const logCalls = infoSpy.mock.calls.filter((call) => call[0] === 'Rendering prompt for Bedrock');
+    expect(logCalls).toHaveLength(1);
+    expect(logCalls[0][1]).toMatchObject({ topicContext: baseContext.topicContext });
+    infoSpy.mockRestore();
   });
 });
 
