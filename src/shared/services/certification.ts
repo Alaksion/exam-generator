@@ -53,9 +53,13 @@ function withGeneratedDomainIds(
       id: existing?.id ?? uuidv4(),
       name: input.name,
       weight: input.weight,
-      topics: input.topics.map((topicName) => {
-        const existingTopic = existingTopicsByName.get(topicName);
-        return existingTopic ?? { id: uuidv4(), name: topicName };
+      topics: input.topics.map((topicInput) => {
+        const existingTopic = existingTopicsByName.get(topicInput.name);
+        return {
+          id: existingTopic?.id ?? uuidv4(),
+          name: topicInput.name,
+          context: topicInput.context,
+        };
       }),
     };
   });
