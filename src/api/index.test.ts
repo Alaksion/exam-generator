@@ -151,7 +151,6 @@ describe('GET /v1/me', () => {
 
   it('returns the caller identity for an authenticated user', async () => {
     mockedGetCurrentUser.mockResolvedValue(meUser);
-
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as {
       sub: string;
@@ -171,7 +170,6 @@ describe('GET /v1/me', () => {
 
   it('returns 401 Unauthorized without a valid token', async () => {
     mockedGetCurrentUser.mockRejectedValue(new UnauthorizedError());
-
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -183,7 +181,6 @@ describe('GET /v1/me', () => {
     mockedGetCurrentUser.mockRejectedValue(
       new UnauthorizedError('No account found for this identity.'),
     );
-
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
