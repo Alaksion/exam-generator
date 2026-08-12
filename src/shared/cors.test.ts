@@ -67,7 +67,7 @@ describe('buildCorsHeaders', () => {
     withEnv('http://localhost:5173', () => {
       const headers = buildCorsHeaders('http://localhost:5173');
       expect(headers['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
-      expect(headers['Access-Control-Allow-Headers']).toBe('Content-Type,x-api-key');
+      expect(headers['Access-Control-Allow-Headers']).toBe('Content-Type,Authorization');
       expect(headers['Access-Control-Allow-Methods']).toBe('GET,POST,PUT,DELETE,OPTIONS');
       expect(headers['Access-Control-Max-Age']).toBe('600');
     });
