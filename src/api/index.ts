@@ -51,7 +51,8 @@ router.register('GET', '/v1/me', async (event) => {
   return jsonResponse(200, toMeResponse(user));
 });
 
-router.register('POST', '/v1/certifications', async (event) => {
+router.register('POST', '/v1/admin/certifications', async (event) => {
+  await requireAdmin(event);
   const body = parseBody(event);
   const certification = await createCertification(body);
   return jsonResponse(201, toPublicCertification(certification));
@@ -70,7 +71,8 @@ router.register('GET', '/v1/certifications/{id}', async (_event, params) => {
   return jsonResponse(200, toPublicCertification(certification));
 });
 
-router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
+router.register('PUT', '/v1/admin/certifications/{id}', async (event, params) => {
+  await requireAdmin(event);
   const body = parseBody(event);
   const certification = await updateCertificationById(params.id, body);
   return jsonResponse(200, toPublicCertification(certification));

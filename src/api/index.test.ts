@@ -235,12 +235,13 @@ describe('CORS handling', () => {
   });
 });
 
-describe('POST /v1/certifications', () => {
+describe('POST /v1/admin/certifications', () => {
   it('returns 201 Created with the public certification', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(null);
     mockedCreateRecord.mockResolvedValue(undefined);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -263,9 +264,10 @@ describe('POST /v1/certifications', () => {
   });
 
   it('returns 400 Bad Request for invalid input', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(null);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', {}));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', {}));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -273,13 +275,23 @@ describe('POST /v1/certifications', () => {
   });
 
   it('returns 409 Conflict for duplicate provider+code', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(certification);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
     expect(body.error).toBe('Conflict');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedCreateRecord).not.toHaveBeenCalled();
   });
 });
 
@@ -336,15 +348,16 @@ describe('GET /v1/certifications/{id}', () => {
   });
 });
 
-describe('PUT /v1/certifications/{id}', () => {
+describe('PUT /v1/admin/certifications/{id}', () => {
   it('returns 200 OK with the updated public certification', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(certification);
     mockedUpdateRecord.mockResolvedValue(undefined);
 
     const result = await handler(
       makeEvent(
         'PUT',
-        '/v1/certifications/11111111-1111-1111-1111-111111111111',
+        '/v1/admin/certifications/11111111-1111-1111-1111-111111111111',
         certificationUpdate,
       ),
     );
@@ -361,8 +374,9 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 400 Bad Request when provider or code is included', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         provider: 'azure',
       }),
@@ -374,10 +388,11 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 404 Not Found for unknown id', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(null);
 
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/unknown-id', certificationUpdate),
+      makeEvent('PUT', '/v1/admin/certifications/unknown-id', certificationUpdate),
     );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -386,10 +401,11 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 400 Bad Request for invalid config', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(certification);
 
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         config: { ...certificationUpdate.config, questionCount: 0 },
       }),
@@ -398,6 +414,42 @@ describe('PUT /v1/certifications/{id}', () => {
 
     expect(result.statusCode).toBe(400);
     expect(body.error).toBe('InvalidRequest');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
+        ...certificationUpdate,
+        config: { ...certificationUpdate.config, questionCount: 0 },
+      }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedUpdateRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe('removed customer-facing certification write routes', () => {
+  it('returns 404 for POST /v1/certifications', async () => {
+    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedCreateRecord).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for PUT /v1/certifications/{id}', async () => {
+    const result = await handler(
+      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', certificationUpdate),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedUpdateRecord).not.toHaveBeenCalled();
   });
 });
 
