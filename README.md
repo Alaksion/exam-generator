@@ -139,6 +139,22 @@ npm run seed:certifications
 
 Re-running is safe and idempotent — the record uses stable ids and is overwritten.
 
+### 7. Bootstrap the first admin
+
+Roles are read from the `Users` table on every request. The first admin is created
+outside the API by pointing the script at the stack's users table and passing the
+target's Cognito `sub` or email:
+
+```bash
+export DYNAMODB_USERS_TABLE=$(aws cloudformation describe-stacks --stack-name exam-generator \
+  --query "Stacks[0].Outputs[?OutputKey=='UsersTableName'].OutputValue" --output text)
+npm run promote:admin -- <sub-or-email>
+```
+
+The script sets the matching user's role to `admin` directly in the table. Re-running is
+idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/role`
+(admin-only).
+
 ## Project layout
 
 ```
@@ -177,6 +193,8 @@ Re-running is safe and idempotent — the record uses stable ids and is overwrit
 | `npm run format` | Format source files with Prettier |
 | `npm run deploy` | Deploy interactively with SAM |
 | `npm run deploy:ci` | Deploy non-interactively (for CI/CD) |
+| `npm run seed:certifications` | Seed the certification catalog |
+| `npm run promote:admin -- <sub-or-email>` | Promote a user to admin in the `Users` table |
 
 ## API endpoints
 
