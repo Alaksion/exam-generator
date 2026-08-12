@@ -108,6 +108,43 @@ describe('PreSignUp email lock', () => {
     await expect(handler(preSignUp())).rejects.toBeInstanceOf(EmailLockedError);
   });
 
+  it('blocks an Apple sign-up when the email is already claimed by an email/password account', async () => {
+    mockedGetUserByEmail.mockResolvedValue({
+      userId: 'existing-sub',
+      email: 'alice@example.com',
+      role: 'customer',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const event = preSignUp({ source: 'PreSignUp_ExternalProvider', userAttributes: { email: 'alice@example.com' } });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(EmailLockedError);
+  });
+
+  it('blocks an Apple sign-up when the email is already claimed by a Google account', async () => {
+    mockedGetUserByEmail.mockResolvedValue({
+      userId: 'google-sub',
+      email: 'alice@example.com',
+      role: 'customer',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const event = preSignUp({ source: 'PreSignUp_ExternalProvider', userAttributes: { email: 'alice@example.com' } });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(EmailLockedError);
+  });
+
+  it('blocks an email/password sign-up when the email is already claimed by an Apple account', async () => {
+    mockedGetUserByEmail.mockResolvedValue({
+      userId: 'apple-sub',
+      email: 'alice@example.com',
+      role: 'customer',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(handler(preSignUp())).rejects.toBeInstanceOf(EmailLockedError);
+  });
+
   it('auto-confirms and auto-verifies a first-time federated sign-up', async () => {
     mockedGetUserByEmail.mockResolvedValue(null);
 
@@ -160,6 +197,19 @@ describe('PostConfirmation provisioning', () => {
     const created = mockedCreateUser.mock.calls[0][0];
     expect(created.userId).toBe('google-sub-456');
     expect(created.email).toBe('google@example.com');
+    expect(created.role).toBe('customer');
+  });
+
+  it('provisions a customer user row after a first-time Apple sign-in', async () => {
+    const result = await handler(
+      postConfirmation({ sub: 'apple-sub-789', email: 'apple@example.com' }),
+    );
+
+    expect(result.triggerSource).toBe('PostConfirmation_ConfirmSignUp');
+    expect(mockedCreateUser).toHaveBeenCalledTimes(1);
+    const created = mockedCreateUser.mock.calls[0][0];
+    expect(created.userId).toBe('apple-sub-789');
+    expect(created.email).toBe('apple@example.com');
     expect(created.role).toBe('customer');
   });
 
