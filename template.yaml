@@ -53,6 +53,7 @@ Globals:
         BEDROCK_MODEL_DEFAULT: !Ref BedrockModelDefault
         DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
+        DYNAMODB_USERS_TABLE: !Ref UsersTable
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
         PRESIGNED_URL_EXPIRATION_SECONDS: '300'
@@ -111,6 +112,9 @@ Resources:
         RecoveryMechanisms:
           - Name: verified_email
             Priority: 1
+      LambdaConfig:
+        PreSignUp: !GetAtt LoginTriggerFunction.Arn
+        PostConfirmation: !GetAtt LoginTriggerFunction.Arn
 
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
@@ -239,6 +243,36 @@ Resources:
               Resource: '*'
 
   # ---------------------------------------------------------------------------
+  # Cognito login triggers
+  # ---------------------------------------------------------------------------
+  LoginTriggerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/authTriggers/index.ts
+        Loader:
+          - .ts=ts
+    Properties:
+      CodeUri: ./
+      Description: Enforces the one-email-one-account lock and provisions user rows.
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+
+  LoginTriggerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LoginTriggerFunction
+      Principal: cognito-idp.amazonaws.com
+      SourceArn: !GetAtt UserPool.Arn
+
+  # ---------------------------------------------------------------------------
   # Asynchronous exam generator
   # ---------------------------------------------------------------------------
   GeneratorFunction:
@@ -353,6 +387,32 @@ Resources:
         - Key: Project
           Value: exam-generator
 
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: exam-generator
+
   GeneratorQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -426,3 +486,6 @@ Outputs:
   ExamsTableName:
     Description: DynamoDB exams table
     Value: !Ref ExamsTable
+  UsersTableName:
+    Description: DynamoDB users table
+    Value: !Ref UsersTable
