@@ -18,6 +18,7 @@ import {
   deleteArtifacts,
 } from '../shared/repositories/artifacts.js';
 import { getExamById, listExams, deleteExam } from '../shared/repositories/exams.js';
+import { listUsers, updateUserRole } from '../shared/repositories/users.js';
 import {
   certification,
   certificationInput,
@@ -45,6 +46,11 @@ vi.mock('../shared/repositories/exams.js', () => ({
   getExamById: vi.fn(),
   listExams: vi.fn(),
   deleteExam: vi.fn(),
+}));
+
+vi.mock('../shared/repositories/users.js', () => ({
+  listUsers: vi.fn(),
+  updateUserRole: vi.fn(),
 }));
 
 vi.mock('../shared/repositories/artifacts.js', () => ({
@@ -79,6 +85,8 @@ const mockedToCreatedExamResponse = vi.mocked(toCreatedExamResponse);
 const mockedGetExamById = vi.mocked(getExamById);
 const mockedListExams = vi.mocked(listExams);
 const mockedDeleteExam = vi.mocked(deleteExam);
+const mockedListUsers = vi.mocked(listUsers);
+const mockedUpdateUserRole = vi.mocked(updateUserRole);
 const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 const mockedGetPresignedDownloadUrl = vi.mocked(getPresignedDownloadUrl);
 const mockedDeleteArtifacts = vi.mocked(deleteArtifacts);
@@ -97,6 +105,13 @@ const adminUser = {
   email: 'admin@example.com',
   role: 'admin' as const,
   createdAt: '2026-01-01T00:00:00.000Z',
+};
+
+const targetUser = {
+  userId: 'sub-bob',
+  email: 'bob@example.com',
+  role: 'customer' as const,
+  createdAt: '2026-02-02T00:00:00.000Z',
 };
 
 beforeEach(() => {
@@ -235,12 +250,13 @@ describe('CORS handling', () => {
   });
 });
 
-describe('POST /v1/certifications', () => {
+describe('POST /v1/admin/certifications', () => {
   it('returns 201 Created with the public certification', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(null);
     mockedCreateRecord.mockResolvedValue(undefined);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -263,9 +279,10 @@ describe('POST /v1/certifications', () => {
   });
 
   it('returns 400 Bad Request for invalid input', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(null);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', {}));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', {}));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -273,13 +290,23 @@ describe('POST /v1/certifications', () => {
   });
 
   it('returns 409 Conflict for duplicate provider+code', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetByProviderCode.mockResolvedValue(certification);
 
-    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
     expect(body.error).toBe('Conflict');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(makeEvent('POST', '/v1/admin/certifications', certificationInput));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedCreateRecord).not.toHaveBeenCalled();
   });
 });
 
@@ -336,15 +363,16 @@ describe('GET /v1/certifications/{id}', () => {
   });
 });
 
-describe('PUT /v1/certifications/{id}', () => {
+describe('PUT /v1/admin/certifications/{id}', () => {
   it('returns 200 OK with the updated public certification', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(certification);
     mockedUpdateRecord.mockResolvedValue(undefined);
 
     const result = await handler(
       makeEvent(
         'PUT',
-        '/v1/certifications/11111111-1111-1111-1111-111111111111',
+        '/v1/admin/certifications/11111111-1111-1111-1111-111111111111',
         certificationUpdate,
       ),
     );
@@ -361,8 +389,9 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 400 Bad Request when provider or code is included', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         provider: 'azure',
       }),
@@ -374,10 +403,11 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 404 Not Found for unknown id', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(null);
 
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/unknown-id', certificationUpdate),
+      makeEvent('PUT', '/v1/admin/certifications/unknown-id', certificationUpdate),
     );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -386,10 +416,11 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 400 Bad Request for invalid config', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetById.mockResolvedValue(certification);
 
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         config: { ...certificationUpdate.config, questionCount: 0 },
       }),
@@ -398,6 +429,45 @@ describe('PUT /v1/certifications/{id}', () => {
 
     expect(result.statusCode).toBe(400);
     expect(body.error).toBe('InvalidRequest');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(
+      makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
+        ...certificationUpdate,
+      }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedUpdateRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe('removed customer-facing certification write routes', () => {
+  it('returns 404 for POST /v1/certifications', async () => {
+    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedCreateRecord).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 for PUT /v1/certifications/{id}', async () => {
+    const result = await handler(
+      makeEvent(
+        'PUT',
+        '/v1/certifications/11111111-1111-1111-1111-111111111111',
+        certificationUpdate,
+      ),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedUpdateRecord).not.toHaveBeenCalled();
   });
 });
 
@@ -752,7 +822,10 @@ describe('DELETE /v1/exams/{id}', () => {
 describe('GET /v1/admin/exams', () => {
   it('returns exams from all users for an admin', async () => {
     mockedGetCurrentUser.mockResolvedValue(adminUser);
-    mockedListExams.mockResolvedValue({ exams: [readyExam, otherUserExam], nextCursor: 'c3RhcnRLZXk=' });
+    mockedListExams.mockResolvedValue({
+      exams: [readyExam, otherUserExam],
+      nextCursor: 'c3RhcnRLZXk=',
+    });
 
     const result = await handler(makeEvent('GET', '/v1/admin/exams'));
     const body = JSON.parse(result.body ?? '{}') as {
@@ -836,9 +909,7 @@ describe('GET /v1/admin/exams/{id}', () => {
     mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetExamById.mockResolvedValue({ ...generatingExam, ownerId: 'sub-bob' });
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${generatingExam.id}`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${generatingExam.id}`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -908,9 +979,7 @@ describe('GET /v1/admin/exams/{id}/download', () => {
     mockedGetExamById.mockResolvedValue(otherUserExam);
     mockedGetPresignedDownloadUrl.mockResolvedValue({ url: downloadUrl, expiresAt });
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`));
     const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
 
     expect(result.statusCode).toBe(200);
@@ -923,9 +992,7 @@ describe('GET /v1/admin/exams/{id}/download', () => {
     mockedGetCurrentUser.mockResolvedValue(currentUser);
     mockedGetExamById.mockResolvedValue(otherUserExam);
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(403);
@@ -974,5 +1041,132 @@ describe('POST /v1/admin/exams', () => {
 
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
+  });
+});
+
+describe('GET /v1/admin/users', () => {
+  it('returns a paginated list of users for an admin', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListUsers.mockResolvedValue({
+      users: [currentUser, targetUser],
+      nextCursor: 'c3RhcnRLZXk=',
+    });
+
+    const result = await handler(makeEvent('GET', '/v1/admin/users'));
+    const body = JSON.parse(result.body ?? '{}') as {
+      items: unknown[];
+      cursor: { nextCursor: string | null; hasNextPage: boolean };
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.items).toEqual([currentUser, targetUser]);
+    expect(body.cursor).toEqual({ nextCursor: 'c3RhcnRLZXk=', hasNextPage: true });
+    expect(mockedListUsers).toHaveBeenCalledWith({ limit: 20 });
+  });
+
+  it('passes through email, sub, limit, and cursor query params', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListUsers.mockResolvedValue({ users: [targetUser] });
+
+    const result = await handler(
+      makeEvent('GET', '/v1/admin/users', undefined, {
+        email: 'bob@',
+        limit: '5',
+        cursor: 'c3RhcnRLZXk=',
+      }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockedListUsers).toHaveBeenCalledWith({
+      email: 'bob@',
+      limit: 5,
+      cursor: 'c3RhcnRLZXk=',
+    });
+  });
+
+  it('searches by sub', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListUsers.mockResolvedValue({ users: [targetUser] });
+
+    const result = await handler(
+      makeEvent('GET', '/v1/admin/users', undefined, { sub: targetUser.userId }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockedListUsers).toHaveBeenCalledWith({ sub: targetUser.userId, limit: 20 });
+  });
+
+  it('returns 400 Bad Request for invalid query params', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+
+    const result = await handler(makeEvent('GET', '/v1/admin/users', undefined, { limit: 'no' }));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedListUsers).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(makeEvent('GET', '/v1/admin/users'));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedListUsers).not.toHaveBeenCalled();
+  });
+});
+
+describe('PUT /v1/admin/users/{id}/role', () => {
+  it('sets the role and returns the updated user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedUpdateUserRole.mockResolvedValue({ ...targetUser, role: 'admin' });
+
+    const result = await handler(
+      makeEvent('PUT', `/v1/admin/users/${targetUser.userId}/role`, { role: 'admin' }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { userId: string; role: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.userId).toBe(targetUser.userId);
+    expect(body.role).toBe('admin');
+    expect(mockedUpdateUserRole).toHaveBeenCalledWith(targetUser.userId, 'admin');
+  });
+
+  it('returns 400 Bad Request for an invalid role', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+
+    const result = await handler(
+      makeEvent('PUT', `/v1/admin/users/${targetUser.userId}/role`, { role: 'superuser' }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedUpdateUserRole).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an unknown user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedUpdateUserRole.mockResolvedValue(null);
+
+    const result = await handler(
+      makeEvent('PUT', `/v1/admin/users/unknown/role`, { role: 'admin' }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    const result = await handler(
+      makeEvent('PUT', `/v1/admin/users/${targetUser.userId}/role`, { role: 'admin' }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedUpdateUserRole).not.toHaveBeenCalled();
   });
 });

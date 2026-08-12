@@ -10,6 +10,7 @@ import {
 import { isApiError, NotFoundError, ExamNotReadyError } from '../shared/errors.js';
 import { listCertifications, getCertificationById } from '../shared/repositories/certifications.js';
 import { listExams } from '../shared/repositories/exams.js';
+import { listUsers, updateUserRole } from '../shared/repositories/users.js';
 import {
   getCanonicalExam,
   getPresignedDownloadUrl,
@@ -23,7 +24,7 @@ import {
 } from '../shared/services/examGeneration.js';
 import { requestPasswordReset, ForgotPasswordRequest } from '../shared/services/passwordReset.js';
 import { getCurrentUser, requireRole, toMeResponse } from '../shared/services/identity.js';
-import { Exam, Provider, ExamStatus } from '../shared/types.js';
+import { Exam, Provider, ExamStatus, Role } from '../shared/types.js';
 
 const router = new Router();
 
@@ -51,7 +52,41 @@ router.register('GET', '/v1/me', async (event) => {
   return jsonResponse(200, toMeResponse(user));
 });
 
-router.register('POST', '/v1/certifications', async (event) => {
+const AdminUserListQuery = z.object({
+  email: z.string().min(1).optional(),
+  sub: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().min(1).optional(),
+});
+type AdminUserListQuery = z.infer<typeof AdminUserListQuery>;
+
+const UpdateUserRoleRequest = z.object({ role: Role });
+
+router.register('GET', '/v1/admin/users', async (event) => {
+  await requireAdmin(event);
+  const query = AdminUserListQuery.parse(
+    Object.fromEntries(
+      new URLSearchParams(
+        (event.queryStringParameters as Record<string, string> | undefined) ?? {},
+      ),
+    ),
+  );
+  const { users, nextCursor } = await listUsers(query);
+  return toListResponse(users, nextCursor);
+});
+
+router.register('PUT', '/v1/admin/users/{id}/role', async (event, params) => {
+  await requireAdmin(event);
+  const { role } = UpdateUserRoleRequest.parse(parseBody(event));
+  const user = await updateUserRole(params.id, role);
+  if (!user) {
+    throw new NotFoundError('User');
+  }
+  return jsonResponse(200, user);
+});
+
+router.register('POST', '/v1/admin/certifications', async (event) => {
+  await requireAdmin(event);
   const body = parseBody(event);
   const certification = await createCertification(body);
   return jsonResponse(201, toPublicCertification(certification));
@@ -70,7 +105,8 @@ router.register('GET', '/v1/certifications/{id}', async (_event, params) => {
   return jsonResponse(200, toPublicCertification(certification));
 });
 
-router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
+router.register('PUT', '/v1/admin/certifications/{id}', async (event, params) => {
+  await requireAdmin(event);
   const body = parseBody(event);
   const certification = await updateCertificationById(params.id, body);
   return jsonResponse(200, toPublicCertification(certification));

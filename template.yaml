@@ -240,7 +240,7 @@ Resources:
             TableName: !Ref CertificationsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamsTable
-        - DynamoDBReadPolicy:
+        - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable
         - SQSSendMessagePolicy:
             QueueName: !GetAtt GeneratorQueue.QueueName

@@ -18,7 +18,8 @@
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "deploy": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --guided",
     "deploy:ci": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --no-confirm-changeset --no-fail-on-empty-changeset",
-    "seed:certifications": "PATH=$(pwd)/node_modules/.bin:$PATH esbuild scripts/seed-certification.ts --bundle --platform=node --format=esm --outfile=.build/seed-certification.mjs && PATH=$(pwd)/node_modules/.bin:$PATH node .build/seed-certification.mjs"
+    "seed:certifications": "PATH=$(pwd)/node_modules/.bin:$PATH esbuild scripts/seed-certification.ts --bundle --platform=node --format=cjs --outfile=.build/seed-certification.cjs && PATH=$(pwd)/node_modules/.bin:$PATH node .build/seed-certification.cjs",
+    "promote:admin": "PATH=$(pwd)/node_modules/.bin:$PATH esbuild scripts/promote-admin.ts --bundle --platform=node --format=cjs --outfile=.build/promote-admin.cjs && PATH=$(pwd)/node_modules/.bin:$PATH node .build/promote-admin.cjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.600.0",
