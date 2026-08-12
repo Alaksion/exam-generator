@@ -22,6 +22,18 @@ export class InvalidRequestError extends ApiError {
   }
 }
 
+export class UnauthorizedError extends ApiError {
+  constructor(message = 'Authentication is required.') {
+    super(401, 'Unauthorized', message);
+  }
+}
+
+export class ForbiddenError extends ApiError {
+  constructor(message = 'You do not have permission to perform this action.') {
+    super(403, 'Forbidden', message);
+  }
+}
+
 export class NotFoundError extends ApiError {
   constructor(resource = 'Resource') {
     super(404, 'NotFound', `${resource} not found.`);

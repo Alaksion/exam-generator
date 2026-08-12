@@ -22,6 +22,7 @@ import {
   RequestExamGeneration,
 } from '../shared/services/examGeneration.js';
 import { requestPasswordReset, ForgotPasswordRequest } from '../shared/services/passwordReset.js';
+import { getCurrentUser, toMeResponse } from '../shared/services/identity.js';
 import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
 const router = new Router();
@@ -38,6 +39,11 @@ router.register('POST', '/v1/auth/forgot-password', async (event) => {
   const { email } = ForgotPasswordRequest.parse(parseBody(event));
   const result = await requestPasswordReset(email);
   return jsonResponse(200, result);
+});
+
+router.register('GET', '/v1/me', async (event) => {
+  const user = await getCurrentUser(event);
+  return jsonResponse(200, toMeResponse(user));
 });
 
 router.register('POST', '/v1/certifications', async (event) => {
@@ -80,7 +86,13 @@ router.register('GET', '/v1/exams', async (event) => {
       limit: z.coerce.number().int().min(1).max(100).default(20),
       cursor: z.string().min(1).optional(),
     })
-    .parse(Object.fromEntries(new URLSearchParams(event.queryStringParameters as Record<string, string> | undefined ?? {})));
+    .parse(
+      Object.fromEntries(
+        new URLSearchParams(
+          (event.queryStringParameters as Record<string, string> | undefined) ?? {},
+        ),
+      ),
+    );
 
   const { exams, nextCursor } = await listExams(query);
 
@@ -180,7 +192,10 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
   }
 };
 
-function withCors(result: APIGatewayProxyResult, corsHeaders: Record<string, string>): APIGatewayProxyResult {
+function withCors(
+  result: APIGatewayProxyResult,
+  corsHeaders: Record<string, string>,
+): APIGatewayProxyResult {
   if (Object.keys(corsHeaders).length === 0) {
     return result;
   }
