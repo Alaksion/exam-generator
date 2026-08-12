@@ -10,11 +10,14 @@ The MVP focuses on two core capabilities:
 
 This repository contains the serverless backend only. The client static application is intentionally out of scope here and lives in a separate repository.
 
-Authentication, pricing, analytics, and failure handling are explicitly out of scope for the MVP.
+Pricing, analytics, and failure handling are explicitly out of scope for the MVP. Authentication is in scope as of ADR-0004.
 
 ## Glossary
 
 - **Certification** — A catalog entry describing an IT certification exam that can be generated. It holds the provider, exam code, human-readable name, and the configuration used by the generator.
+- **User** — A person with an account. Identified by the Cognito `sub` (the `Users` table partition key). Stores a lowercased unique `email` and a `role`.
+- **Role** — `customer` or `admin`. A `customer` can only interact with their own exams; an `admin` can also manage any user's exams and certification writes.
+- **Email Lock** — The rule that one email belongs to exactly one account: whichever sign-up path (email/password, Google, or Apple) claims an email first owns it, and later attempts from any path are rejected by the Cognito PreSignUp trigger.
 - **Knowledge Domain** — A weighted knowledge area within a certification, e.g. `Cloud Concepts`. Each domain carries a weight (percent) and a list of topics.
 - **Topic** — A subtopic attached to a knowledge domain, e.g. `Amazon S3`. Topics scope individual generated questions.
 - **Topic Context** — Free-form prose attached to a `Topic` describing what the topic actually covers. Required and bounded (20–1500 characters); injected into the generator prompt as a hard scope boundary.
@@ -52,6 +55,7 @@ Identity is a system-generated UUID.
 Core fields:
 
 - `id` — UUID.
+- `ownerId` — the `sub` of the `User` who generated this exam. A customer can only act on exams they own; admins can act on any user's exams.
 - `certificationId` — reference to the `Certification` that generated this exam.
 - `title` — auto-generated title: `{Certification.name} - Practice Exam {ISO-8601 timestamp}`.
 - `status` — `PENDING`, `GENERATING`, `READY`, or `FAILED`. An exam is created `PENDING`, is claimed to `GENERATING` when the generator actually starts work, and settles to `READY` on success or `FAILED` on failure.
@@ -159,6 +163,8 @@ Public API errors use a consistent shape:
 Examples:
 
 - `InvalidRequest` — `400`
+- `Unauthorized` — `401` (missing or invalid credentials)
+- `Forbidden` — `403` (authenticated but not permitted: wrong role, or an exam owned by another user treated as not-found)
 - `ExamNotFound` — `404`
 - `ExamNotReady` — `409` (exam exists but is not `READY`)
 - `InternalError` — `500`
