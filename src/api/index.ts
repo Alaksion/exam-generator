@@ -23,14 +23,13 @@ import {
 } from '../shared/services/examGeneration.js';
 import { requestPasswordReset, ForgotPasswordRequest } from '../shared/services/passwordReset.js';
 import { getCurrentUser, requireRole, toMeResponse } from '../shared/services/identity.js';
-import { Exam, Provider, ExamStatus, User } from '../shared/types.js';
+import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
 const router = new Router();
 
-async function requireAdmin(event: APIGatewayProxyEvent): Promise<User> {
+async function requireAdmin(event: APIGatewayProxyEvent): Promise<void> {
   const user = await getCurrentUser(event);
   requireRole(user, 'admin');
-  return user;
 }
 
 router.register('GET', '/v1/health', async () => {
@@ -127,9 +126,17 @@ router.register('GET', '/v1/admin/exams', async (event) => {
   return toListResponse(exams, nextCursor);
 });
 
-async function loadExamOrThrow(id: string, ownerId?: string): Promise<Exam> {
+async function getExamOrThrow(id: string): Promise<Exam> {
   const exam = await getExamById(id);
-  if (!exam || (ownerId !== undefined && exam.ownerId !== ownerId)) {
+  if (!exam) {
+    throw new NotFoundError('Exam');
+  }
+  return exam;
+}
+
+async function loadOwnedExamOrThrow(id: string, ownerId: string): Promise<Exam> {
+  const exam = await getExamOrThrow(id);
+  if (exam.ownerId !== ownerId) {
     throw new NotFoundError('Exam');
   }
   return exam;
@@ -160,7 +167,7 @@ async function toDownloadResponse(exam: Exam): Promise<APIGatewayProxyResult> {
   return jsonResponse(200, { downloadUrl: url, expiresAt });
 }
 
-async function toDeleteResponse(exam: Exam): Promise<APIGatewayProxyResult> {
+async function deleteExamAndRespond(exam: Exam): Promise<APIGatewayProxyResult> {
   const s3Keys = [exam.s3KeyJson, exam.s3KeyPdf].filter((key): key is string => Boolean(key));
   if (s3Keys.length > 0) {
     await deleteArtifacts(s3Keys);
@@ -171,50 +178,50 @@ async function toDeleteResponse(exam: Exam): Promise<APIGatewayProxyResult> {
 
 router.register('GET', '/v1/exams/{id}', async (event, params) => {
   const user = await getCurrentUser(event);
-  const exam = await loadExamOrThrow(params.id, user.userId);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   return toFullExamResponse(exam);
 });
 
 router.register('GET', '/v1/admin/exams/{id}', async (event, params) => {
   await requireAdmin(event);
-  const exam = await loadExamOrThrow(params.id);
+  const exam = await getExamOrThrow(params.id);
   return toFullExamResponse(exam);
 });
 
 router.register('GET', '/v1/exams/{id}/status', async (event, params) => {
   const user = await getCurrentUser(event);
-  const exam = await loadExamOrThrow(params.id, user.userId);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   return toStatusResponse(exam);
 });
 
 router.register('GET', '/v1/admin/exams/{id}/status', async (event, params) => {
   await requireAdmin(event);
-  const exam = await loadExamOrThrow(params.id);
+  const exam = await getExamOrThrow(params.id);
   return toStatusResponse(exam);
 });
 
 router.register('GET', '/v1/exams/{id}/download', async (event, params) => {
   const user = await getCurrentUser(event);
-  const exam = await loadExamOrThrow(params.id, user.userId);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   return toDownloadResponse(exam);
 });
 
 router.register('GET', '/v1/admin/exams/{id}/download', async (event, params) => {
   await requireAdmin(event);
-  const exam = await loadExamOrThrow(params.id);
+  const exam = await getExamOrThrow(params.id);
   return toDownloadResponse(exam);
 });
 
 router.register('DELETE', '/v1/exams/{id}', async (event, params) => {
   const user = await getCurrentUser(event);
-  const exam = await loadExamOrThrow(params.id, user.userId);
-  return toDeleteResponse(exam);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
+  return deleteExamAndRespond(exam);
 });
 
 router.register('DELETE', '/v1/admin/exams/{id}', async (event, params) => {
   await requireAdmin(event);
-  const exam = await loadExamOrThrow(params.id);
-  return toDeleteResponse(exam);
+  const exam = await getExamOrThrow(params.id);
+  return deleteExamAndRespond(exam);
 });
 
 function mapErrorToResponse(error: unknown): APIGatewayProxyResult {
