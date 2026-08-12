@@ -15,7 +15,7 @@ Pricing, analytics, and failure handling are explicitly out of scope for the MVP
 ## Glossary
 
 - **Certification** — A catalog entry describing an IT certification exam that can be generated. It holds the provider, exam code, human-readable name, and the configuration used by the generator.
-- **User** — A person with an account. Identified by the Cognito `sub` (the `Users` table partition key). Stores a lowercased unique `email` and a `role`.
+- **User** — A person with an account. Identified by a normalized lowercased unique `email` (the `Users` table partition key) and the Cognito `sub` (a GSI). Stores a `role`.
 - **Role** — `customer` or `admin`. A `customer` can only interact with their own exams; an `admin` can also manage any user's exams and certification writes.
 - **Email Lock** — The rule that one email belongs to exactly one account: whichever sign-up path (email/password, Google, or Apple) claims an email first owns it, and later attempts from any path are rejected by the Cognito PreSignUp trigger.
 - **Knowledge Domain** — A weighted knowledge area within a certification, e.g. `Cloud Concepts`. Each domain carries a weight (percent) and a list of topics.

@@ -1,5 +1,16 @@
 import { z } from 'zod';
 
+export const Role = z.enum(['customer', 'admin']);
+export type Role = z.infer<typeof Role>;
+
+export const User = z.object({
+  userId: z.string().min(1),
+  email: z.string().trim().toLowerCase().min(1),
+  role: Role,
+  createdAt: z.string().datetime(),
+});
+export type User = z.infer<typeof User>;
+
 export const Provider = z.enum(['aws', 'azure', 'gcp']);
 export type Provider = z.infer<typeof Provider>;
 

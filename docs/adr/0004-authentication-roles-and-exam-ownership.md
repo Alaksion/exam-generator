@@ -31,11 +31,16 @@ are AWS serverless (SAM).
 ### 1. A `Users` table is the system of record for identity and role
 
 Cognito handles authentication only. A new `Users` DynamoDB table is the authority for
-who each `sub` is and what they may do.
+who each account is and what it may do.
 
-- Partition key: `userId` (= the Cognito `sub`), immutable for the life of the account.
-- Global secondary index: `email` (lowercased/normalized), backing the email-uniqueness
-  check and lookups.
+- Partition key: `email` (lowercased/normalized) — unique per account. Keying on email
+  lets the write path reject a duplicate atomically (a conditional `PutItem` on
+  `attribute_not_exists(email)`), which is what makes "first-claim-wins" hold under
+  concurrency: two concurrent sign-ups for the same email cannot both succeed. (Cognito
+  already dedupes native sign-ups, whose username is the email; the table-level guard
+  closes the cross-provider race — federated vs. native, or Google vs. Apple.)
+- Global secondary index: `userId` = the Cognito `sub`, so identity lookup by `sub` still
+  works. The `sub` is the value stored as `ownerId` on exams.
 - `role`: `customer` or `admin`.
 
 ### 2. The email is locked by a Cognito PreSignUp trigger
@@ -48,6 +53,9 @@ enforcement point for the one-email-one-account rule:
   now).
 - The lock is **symmetric / first-claim-wins**: whichever path claims an email first owns
   it; later attempts from either path are rejected with a generic failure.
+
+Both enforcement points (the pre-sign-up read and the post-confirmation write) key on the
+email, and the write is atomic, so first-claim-wins holds even when two sign-ups race.
 
 The same trigger provisions the initial `Users` row with `role = customer` (via the
 post-confirmation hook), so every authenticated `sub` maps to a `Users` row.
