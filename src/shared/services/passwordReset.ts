@@ -18,7 +18,7 @@ export interface PasswordResetResult {
 }
 
 export async function requestPasswordReset(email: string): Promise<PasswordResetResult> {
-  const wait = randomizedDelay();
+  const delayMs = randomizedDelay();
   try {
     await cognito.send(
       new ForgotPasswordCommand({
@@ -27,13 +27,11 @@ export async function requestPasswordReset(email: string): Promise<PasswordReset
       }),
     );
   } catch (error) {
-    if (error instanceof UserNotFoundException) {
-      await sleep(wait);
-      return { status: 'ok' };
+    if (!(error instanceof UserNotFoundException)) {
+      throw error;
     }
-    throw error;
   }
-  await sleep(wait);
+  await sleep(delayMs);
   return { status: 'ok' };
 }
 

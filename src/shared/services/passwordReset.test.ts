@@ -57,9 +57,7 @@ describe('requestPasswordReset', () => {
   it('rethrows genuine downstream failures', async () => {
     sendMock.mockRejectedValue(new Error('cognito unavailable'));
 
-    await expect(
-      requestPasswordReset('alice@example.com').then((r) => r),
-    ).rejects.toThrow('cognito unavailable');
+    await expect(requestPasswordReset('alice@example.com')).rejects.toThrow('cognito unavailable');
   });
 });
 
