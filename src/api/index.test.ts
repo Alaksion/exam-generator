@@ -127,7 +127,7 @@ describe('CORS handling', () => {
       makeEvent('OPTIONS', '/v1/certifications', undefined, undefined, {
         Origin: 'http://localhost:5173',
         'Access-Control-Request-Method': 'GET',
-        'Access-Control-Request-Headers': 'content-type,x-api-key',
+        'Access-Control-Request-Headers': 'content-type,authorization',
       }),
     ));
 
