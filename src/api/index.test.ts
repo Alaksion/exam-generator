@@ -9,6 +9,7 @@ import {
   updateCertification as updateCertificationRecord,
 } from '../shared/repositories/certifications.js';
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
+import { requestPasswordReset } from '../shared/services/passwordReset.js';
 import { NotFoundError } from '../shared/errors.js';
 import {
   getCanonicalExam,
@@ -51,6 +52,14 @@ vi.mock('../shared/repositories/artifacts.js', () => ({
   deleteArtifacts: vi.fn(),
 }));
 
+vi.mock('../shared/services/passwordReset.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/services/passwordReset.js')>();
+  return {
+    ...actual,
+    requestPasswordReset: vi.fn(),
+  };
+});
+
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
@@ -64,6 +73,7 @@ const mockedDeleteExam = vi.mocked(deleteExam);
 const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 const mockedGetPresignedDownloadUrl = vi.mocked(getPresignedDownloadUrl);
 const mockedDeleteArtifacts = vi.mocked(deleteArtifacts);
+const mockedRequestPasswordReset = vi.mocked(requestPasswordReset);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -96,6 +106,28 @@ describe('health endpoint', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers).toEqual({ 'Content-Type': 'application/json' });
     expect(body.status).toBe('ok');
+  });
+});
+
+describe('POST /v1/auth/forgot-password', () => {
+  it('returns ok and proxies the reset request', async () => {
+    mockedRequestPasswordReset.mockResolvedValue({ status: 'ok' });
+
+    const result = await handler(makeEvent('POST', '/v1/auth/forgot-password', { email: 'Alice@Example.com' }));
+    const body = JSON.parse(result.body ?? '{}') as { status: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body).toEqual({ status: 'ok' });
+    expect(mockedRequestPasswordReset).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('returns 400 for a missing email', async () => {
+    const result = await handler(makeEvent('POST', '/v1/auth/forgot-password', {}));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedRequestPasswordReset).not.toHaveBeenCalled();
   });
 });
 

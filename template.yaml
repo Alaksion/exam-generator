@@ -53,7 +53,8 @@ Globals:
         BEDROCK_MODEL_DEFAULT: !Ref BedrockModelDefault
         DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
-        DYNAMODB_USERS_TABLE: !Ref UsersTable
+DYNAMODB_USERS_TABLE: !Ref UsersTable
+        COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
         PRESIGNED_URL_EXPIRATION_SECONDS: '300'
@@ -220,6 +221,14 @@ Resources:
             RestApiId: !Ref PublicApi
             Auth:
               Authorizer: NONE
+        ForgotPasswordEvent:
+          Type: Api
+          Properties:
+            Path: /v1/auth/forgot-password
+            Method: POST
+            RestApiId: !Ref PublicApi
+            Auth:
+              Authorizer: NONE
         ApiEvent:
           Type: Api
           Properties:
@@ -241,6 +250,10 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: '*'
+            - Effect: Allow
+              Action:
+                - cognito-idp:ForgotPassword
+              Resource: !GetAtt UserPool.Arn
 
   # ---------------------------------------------------------------------------
   # Cognito login triggers
