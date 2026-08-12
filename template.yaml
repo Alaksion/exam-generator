@@ -7,11 +7,14 @@ Parameters:
     Type: String
     Default: dev
     Description: Deployment environment.
-  ApiKeyValue:
+  AuthDomainPrefix:
     Type: String
-    NoEcho: true
-    Description: Value for the x-api-key header required by all public endpoints.
-    MinLength: 1
+    Default: exam-generator
+    Description: Globally unique prefix for the Cognito Hosted UI domain.
+  AuthCallbackUrl:
+    Type: String
+    Default: http://localhost:5173/callback
+    Description: Callback URL registered on the user pool app client.
   BedrockModelDefault:
     Type: String
     Default: amazon.nova-lite-v1:0
@@ -68,52 +71,77 @@ Resources:
       Name: !Sub ${AWS::StackName}-public-api
       StageName: !Ref Environment
       Auth:
-        DefaultAuthorizer: ApiKeyAuthorizer
+        DefaultAuthorizer: CognitoJwtAuthorizer
         Authorizers:
-          ApiKeyAuthorizer:
-            FunctionArn: !GetAtt ApiKeyAuthorizerFunction.Arn
-            FunctionPayloadType: REQUEST
-            Identity:
-              ReauthorizeEvery: 0
+          CognitoJwtAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+        AddDefaultAuthorizerToCorsPreflight: false
       MethodSettings:
         - ResourcePath: /*
           HttpMethod: '*'
           ThrottlingRateLimit: !Ref ApiThrottleRateLimit
           ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
 
-  ApiKeyAuthorizerFunction:
-    Type: AWS::Serverless::Function
-    Metadata:
-      BuildMethod: esbuild
-      BuildProperties:
-        Minify: true
-        Target: es2022
-        Sourcemap: true
-        EntryPoints:
-          - src/authorizer/index.ts
-        Loader:
-          - .ts=ts
+  # ---------------------------------------------------------------------------
+  # Cognito identity
+  # ---------------------------------------------------------------------------
+  UserPool:
+    Type: AWS::Cognito::UserPool
     Properties:
-      CodeUri: ./
-      Description: Validates the x-api-key header against the configured secret.
-      Environment:
-        Variables:
-          API_KEY_PARAMETER_NAME: !Ref ApiKeyParameter
+      UserPoolName: !Sub ${AWS::StackName}-users
+      DeletionProtection: ACTIVE
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
       Policies:
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - ssm:GetParameter
-              Resource: !GetAtt ApiKeyParameter.Arn
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          TemporaryPasswordValidityDays: 7
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
 
-  ApiKeyParameter:
-    Type: AWS::SSM::Parameter
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
     Properties:
-      Name: !Sub /${AWS::StackName}/api-key
-      Type: String
-      Value: !Ref ApiKeyValue
-      Description: API key used by the x-api-key authorizer.
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub ${AWS::StackName}-client
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - !Ref AuthCallbackUrl
+      LogoutURLs:
+        - http://localhost:5173
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+      PreventUserExistenceErrors: ENABLED
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub ${AuthDomainPrefix}-${AWS::Region}
+      UserPoolId: !Ref UserPool
 
   # PublicApiWafAcl:
   #   Type: AWS::WAFv2::WebACL
@@ -173,6 +201,22 @@ Resources:
       CodeUri: ./
       Description: HTTP API handler for certifications and exams.
       Events:
+        HealthEvent:
+          Type: Api
+          Properties:
+            Path: /v1/health
+            Method: GET
+            RestApiId: !Ref PublicApi
+            Auth:
+              Authorizer: NONE
+        PreflightEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: OPTIONS
+            RestApiId: !Ref PublicApi
+            Auth:
+              Authorizer: NONE
         ApiEvent:
           Type: Api
           Properties:
@@ -362,6 +406,15 @@ Outputs:
   ApiUrl:
     Description: Public API endpoint
     Value: !Sub https://${PublicApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/
+  UserPoolId:
+    Description: Cognito user pool for user sign-ups
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito app client used by the client application
+    Value: !Ref UserPoolClient
+  AuthDomain:
+    Description: Cognito Hosted UI domain
+    Value: !Sub ${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
   GeneratorQueueUrl:
     Description: Generator SQS queue URL
     Value: !Ref GeneratorQueue
