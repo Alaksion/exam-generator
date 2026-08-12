@@ -4,3 +4,4 @@ process.env.SQS_GENERATOR_QUEUE_URL = 'test-queue-url';
 process.env.S3_ARTIFACTS_BUCKET = 'test-artifacts-bucket';
 process.env.BEDROCK_MODEL_DEFAULT = 'amazon.nova-lite-v1:0';
 process.env.PRESIGNED_URL_EXPIRATION_SECONDS = '300';
+process.env.COGNITO_USER_POOL_CLIENT_ID = 'test-client-id';

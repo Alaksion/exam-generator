@@ -23,6 +23,7 @@ export const config = {
   bedrockModelDefault: process.env.BEDROCK_MODEL_DEFAULT || 'amazon.nova-lite-v1:0',
   certificationsTable: requireEnv('DYNAMODB_CERTIFICATIONS_TABLE'),
   examsTable: requireEnv('DYNAMODB_EXAMS_TABLE'),
+  cognitoUserPoolClientId: requireEnv('COGNITO_USER_POOL_CLIENT_ID'),
   generatorQueueUrl: requireEnv('SQS_GENERATOR_QUEUE_URL'),
   artifactsBucket: requireEnv('S3_ARTIFACTS_BUCKET'),
   bedrockMaxAttempts: getIntEnv('BEDROCK_MAX_ATTEMPTS', 3),
