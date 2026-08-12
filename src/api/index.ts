@@ -21,6 +21,7 @@ import {
   toCreatedExamResponse,
   RequestExamGeneration,
 } from '../shared/services/examGeneration.js';
+import { requestPasswordReset, ForgotPasswordRequest } from '../shared/services/passwordReset.js';
 import { Exam, Provider, ExamStatus } from '../shared/types.js';
 
 const router = new Router();
@@ -28,6 +29,12 @@ const router = new Router();
 router.register('GET', '/v1/health', async () => {
   console.log('Health check endpoint called.');
   return jsonResponse(200, { status: 'ok' });
+});
+
+router.register('POST', '/v1/auth/forgot-password', async (event) => {
+  const { email } = ForgotPasswordRequest.parse(parseBody(event));
+  const result = await requestPasswordReset(email);
+  return jsonResponse(200, result);
 });
 
 router.register('POST', '/v1/certifications', async (event) => {
