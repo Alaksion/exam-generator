@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import * as usersRepo from './users.js';
 import { User } from '../types.js';
 
@@ -35,62 +35,63 @@ describe('normalizeEmail', () => {
 });
 
 describe('getUserByEmail', () => {
-  it('queries the EmailIndex with a normalized email', async () => {
+  it('gets by the normalized email partition key', async () => {
     sendMock.mockResolvedValue({ Items: [] });
 
     await usersRepo.getUserByEmail('Alice@Example.com');
 
-    const command = sendMock.mock.calls[0][0] as QueryCommand;
-    expect(command).toBeInstanceOf(QueryCommand);
+    const command = sendMock.mock.calls[0][0] as GetCommand;
+    expect(command).toBeInstanceOf(GetCommand);
     expect(command.input).toMatchObject({
-      IndexName: 'EmailIndex',
-      KeyConditionExpression: 'email = :email',
-      ExpressionAttributeValues: { ':email': 'alice@example.com' },
+      Key: { email: 'alice@example.com' },
     });
   });
 
   it('returns the matching user or null', async () => {
-    const user = customerUser;
-    sendMock.mockResolvedValueOnce({ Items: [user] });
-    await expect(usersRepo.getUserByEmail('alice@example.com')).resolves.toEqual(user);
+    sendMock.mockResolvedValueOnce({ Item: customerUser });
+    await expect(usersRepo.getUserByEmail('alice@example.com')).resolves.toEqual(customerUser);
 
-    sendMock.mockResolvedValueOnce({ Items: [] });
+    sendMock.mockResolvedValueOnce({});
     await expect(usersRepo.getUserByEmail('bob@example.com')).resolves.toBeNull();
   });
 });
 
+describe('getUserById', () => {
+  it('queries the UserIdIndex', async () => {
+    sendMock.mockResolvedValueOnce({ Items: [customerUser] });
+    await expect(usersRepo.getUserById('sub-1')).resolves.toEqual(customerUser);
+
+    const command = sendMock.mock.calls[0][0] as QueryCommand;
+    expect(command).toBeInstanceOf(QueryCommand);
+    expect(command.input).toMatchObject({
+      IndexName: 'UserIdIndex',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': 'sub-1' },
+    });
+
+    sendMock.mockResolvedValueOnce({ Items: [] });
+    await expect(usersRepo.getUserById('missing')).resolves.toBeNull();
+  });
+});
+
 describe('createUser', () => {
-  it('puts a user row with a condition by default', async () => {
+  it('puts a user row conditioned on the email not existing', async () => {
     sendMock.mockResolvedValue({});
 
-    const user = customerUser;
-    const result = await usersRepo.createUser(user);
+    const result = await usersRepo.createUser(customerUser);
 
     expect(result).toBe('created');
     const command = sendMock.mock.calls[0][0] as PutCommand;
     expect(command).toBeInstanceOf(PutCommand);
     expect(command.input).toMatchObject({
-      Item: user,
-      ConditionExpression: 'attribute_not_exists(userId)',
+      Item: customerUser,
+      ConditionExpression: 'attribute_not_exists(email)',
     });
   });
 
-  it('returns exists when the conditional put fails', async () => {
-    sendMock.mockResolvedValueOnce({}).mockRejectedValueOnce({ name: 'ConditionalCheckFailedException' });
+  it('returns exists when the email is already claimed', async () => {
+    sendMock.mockRejectedValueOnce({ name: 'ConditionalCheckFailedException' });
 
-    const user = customerUser;
-    await expect(usersRepo.createUser(user)).resolves.toBe('created');
-    await expect(usersRepo.createUser(user)).resolves.toBe('exists');
-  });
-});
-
-describe('getUserById', () => {
-  it('gets a user by id', async () => {
-    const user = customerUser;
-    sendMock.mockResolvedValueOnce({ Item: user });
-    await expect(usersRepo.getUserById('sub-1')).resolves.toEqual(user);
-
-    sendMock.mockResolvedValueOnce({});
-    await expect(usersRepo.getUserById('missing')).resolves.toBeNull();
+    await expect(usersRepo.createUser(customerUser)).resolves.toBe('exists');
   });
 });

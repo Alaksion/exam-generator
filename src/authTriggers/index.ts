@@ -51,12 +51,19 @@ async function provisionUser(event: PostConfirmationConfirmSignUpTriggerEvent): 
     return event;
   }
 
-  await createUser({
+  const result = await createUser({
     userId: sub,
     email: normalizeEmail(email),
     role: 'customer',
     createdAt: new Date().toISOString(),
   });
+
+  if (result === 'exists') {
+    const existing = await getUserByEmail(email);
+    if (existing && existing.userId !== sub) {
+      throw new EmailLockedError();
+    }
+  }
 
   return event;
 }

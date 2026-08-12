@@ -393,17 +393,17 @@ Resources:
       TableName: !Sub ${AWS::StackName}-users
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: userId
-          AttributeType: S
         - AttributeName: email
           AttributeType: S
-      KeySchema:
         - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: email
           KeyType: HASH
       GlobalSecondaryIndexes:
-        - IndexName: EmailIndex
+        - IndexName: UserIdIndex
           KeySchema:
-            - AttributeName: email
+            - AttributeName: userId
               KeyType: HASH
           Projection:
             ProjectionType: ALL

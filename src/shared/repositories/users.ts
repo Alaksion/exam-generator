@@ -16,44 +16,41 @@ export function normalizeEmail(email: string): string {
 
 export async function getUserByEmail(email: string): Promise<User | null> {
   const result = await client.send(
+    new GetCommand({
+      TableName: config.usersTable,
+      Key: { email: normalizeEmail(email) },
+    }),
+  );
+  return (result.Item as User) ?? null;
+}
+
+export async function getUserById(userId: string): Promise<User | null> {
+  const result = await client.send(
     new QueryCommand({
       TableName: config.usersTable,
-      IndexName: 'EmailIndex',
-      KeyConditionExpression: 'email = :email',
-      ExpressionAttributeValues: { ':email': normalizeEmail(email) },
+      IndexName: 'UserIdIndex',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: { ':userId': userId },
       Limit: 1,
     }),
   );
   return (result.Items?.[0] as User) ?? null;
 }
 
-export async function createUser(
-  user: User,
-  options: { ifNotExists: boolean } = { ifNotExists: true },
-): Promise<'created' | 'exists'> {
+export async function createUser(user: User): Promise<'created' | 'exists'> {
   try {
     await client.send(
       new PutCommand({
         TableName: config.usersTable,
         Item: user,
-        ...(options.ifNotExists ? { ConditionExpression: 'attribute_not_exists(userId)' } : {}),
+        ConditionExpression: 'attribute_not_exists(email)',
       }),
     );
     return 'created';
   } catch (error) {
-    if (options.ifNotExists && (error as { name?: string }).name === 'ConditionalCheckFailedException') {
+    if ((error as { name?: string }).name === 'ConditionalCheckFailedException') {
       return 'exists';
     }
     throw error;
   }
-}
-
-export async function getUserById(userId: string): Promise<User | null> {
-  const result = await client.send(
-    new GetCommand({
-      TableName: config.usersTable,
-      Key: { userId },
-    }),
-  );
-  return (result.Item as User) ?? null;
 }
