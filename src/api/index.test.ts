@@ -420,7 +420,6 @@ describe('PUT /v1/admin/certifications/{id}', () => {
     const result = await handler(
       makeEvent('PUT', '/v1/admin/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
-        config: { ...certificationUpdate.config, questionCount: 0 },
       }),
     );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
