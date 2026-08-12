@@ -92,6 +92,13 @@ const currentUser = {
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
+const adminUser = {
+  userId: 'sub-admin',
+  email: 'admin@example.com',
+  role: 'admin' as const,
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockedGetCurrentUser.mockResolvedValue(currentUser);
@@ -739,5 +746,233 @@ describe('DELETE /v1/exams/{id}', () => {
     expect(body.error).toBe('NotFound');
     expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
     expect(mockedDeleteExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /v1/admin/exams', () => {
+  it('returns exams from all users for an admin', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListExams.mockResolvedValue({ exams: [readyExam, otherUserExam], nextCursor: 'c3RhcnRLZXk=' });
+
+    const result = await handler(makeEvent('GET', '/v1/admin/exams'));
+    const body = JSON.parse(result.body ?? '{}') as {
+      items: unknown[];
+      cursor: { nextCursor: string | null; hasNextPage: boolean };
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.items).toEqual([readyExam, otherUserExam]);
+    expect(body.cursor).toEqual({ nextCursor: 'c3RhcnRLZXk=', hasNextPage: true });
+    expect(mockedListExams).toHaveBeenCalledWith({
+      status: 'READY',
+      limit: 20,
+    });
+    expect(mockedListExams.mock.calls[0][0]).not.toHaveProperty('ownerId');
+  });
+
+  it('passes through status, provider, certificationId, limit, and cursor query params', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListExams.mockResolvedValue({ exams: [otherUserExam] });
+
+    const result = await handler(
+      makeEvent('GET', '/v1/admin/exams', undefined, {
+        status: 'GENERATING',
+        provider: 'aws',
+        certificationId: certification.id,
+        limit: '10',
+        cursor: 'c3RhcnRLZXk=',
+      }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockedListExams).toHaveBeenCalledWith({
+      status: 'GENERATING',
+      provider: 'aws',
+      certificationId: certification.id,
+      limit: 10,
+      cursor: 'c3RhcnRLZXk=',
+    });
+  });
+
+  it('returns 400 Bad Request for invalid query params', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+
+    const result = await handler(makeEvent('GET', '/v1/admin/exams', undefined, { limit: 'no' }));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(400);
+    expect(body.error).toBe('InvalidRequest');
+    expect(mockedListExams).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
+
+    const result = await handler(makeEvent('GET', '/v1/admin/exams'));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedListExams).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /v1/admin/exams/{id}', () => {
+  it('returns the full exam for an exam owned by another user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+    mockedGetCanonicalExam.mockResolvedValue({ ...fullExam, id: otherUserExam.id });
+
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}`));
+    const body = JSON.parse(result.body ?? '{}') as { id: string; schemaVersion: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.id).toBe(otherUserExam.id);
+    expect(body.schemaVersion).toBe('1.0.0');
+    expect(mockedGetCanonicalExam).toHaveBeenCalledWith(otherUserExam.s3KeyJson);
+  });
+
+  it('returns 409 ExamNotReady while the exam is GENERATING', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue({ ...generatingExam, ownerId: 'sub-bob' });
+
+    const result = await handler(
+      makeEvent('GET', `/v1/admin/exams/${generatingExam.id}`),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(409);
+    expect(body.error).toBe('ExamNotReady');
+    expect(mockedGetCanonicalExam).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an unknown exam', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue(null);
+
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${examId}`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedGetCanonicalExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /v1/admin/exams/{id}/status', () => {
+  it('returns the status payload for an exam owned by another user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/status`));
+    const body = JSON.parse(result.body ?? '{}') as {
+      id: string;
+      status: string;
+      createdAt: string;
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.id).toBe(otherUserExam.id);
+    expect(body.status).toBe('READY');
+    expect(body.createdAt).toBe(otherUserExam.createdAt);
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/status`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+  });
+});
+
+describe('GET /v1/admin/exams/{id}/download', () => {
+  it('returns a presigned URL for an exam owned by another user', async () => {
+    const downloadUrl = 'https://s3.example.com/presigned';
+    const expiresAt = '2026-07-31T12:10:00.000Z';
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+    mockedGetPresignedDownloadUrl.mockResolvedValue({ url: downloadUrl, expiresAt });
+
+    const result = await handler(
+      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
+
+    expect(result.statusCode).toBe(200);
+    expect(body.downloadUrl).toBe(downloadUrl);
+    expect(body.expiresAt).toBe(expiresAt);
+    expect(mockedGetPresignedDownloadUrl).toHaveBeenCalledWith(otherUserExam.s3KeyPdf);
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(
+      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedGetPresignedDownloadUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe('DELETE /v1/admin/exams/{id}', () => {
+  it('deletes an exam owned by another user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('DELETE', `/v1/admin/exams/${otherUserExam.id}`));
+
+    expect(result.statusCode).toBe(204);
+    expect(mockedDeleteArtifacts).toHaveBeenCalledWith([
+      otherUserExam.s3KeyJson,
+      otherUserExam.s3KeyPdf,
+    ]);
+    expect(mockedDeleteExam).toHaveBeenCalledWith(otherUserExam.id);
+  });
+
+  it('returns 403 Forbidden for a customer', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('DELETE', `/v1/admin/exams/${otherUserExam.id}`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(403);
+    expect(body.error).toBe('Forbidden');
+    expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
+    expect(mockedDeleteExam).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /v1/admin/exams', () => {
+  it('returns 404 Not Found (admins generate exams via POST /v1/exams)', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+
+    const result = await handler(
+      makeEvent('POST', '/v1/admin/exams', { certificationId: certification.id }),
+    );
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
   });
 });
