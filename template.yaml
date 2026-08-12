@@ -35,6 +35,15 @@ Parameters:
     Type: String
     Default: http://localhost:5173
     Description: Comma-separated list of origins allowed to call the public API (CORS).
+  GoogleClientId:
+    Type: String
+    Default: ''
+    Description: Google OAuth client ID for federated sign-in. Leave empty to disable the Google IdP.
+  GoogleClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Google OAuth client secret for federated sign-in. Leave empty to disable the Google IdP.
 
 Globals:
   Function:
@@ -53,7 +62,7 @@ Globals:
         BEDROCK_MODEL_DEFAULT: !Ref BedrockModelDefault
         DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
-DYNAMODB_USERS_TABLE: !Ref UsersTable
+        DYNAMODB_USERS_TABLE: !Ref UsersTable
         COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
@@ -62,6 +71,9 @@ DYNAMODB_USERS_TABLE: !Ref UsersTable
     Tags:
       Project: exam-generator
       Environment: !Ref Environment
+
+Conditions:
+  GoogleIdpEnabled: !Not [!Equals [!Ref GoogleClientId, '']]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -128,6 +140,7 @@ Resources:
         - ALLOW_REFRESH_TOKEN_AUTH
       SupportedIdentityProviders:
         - COGNITO
+        - !If [GoogleIdpEnabled, !Ref GoogleIdentityProvider, !Ref 'AWS::NoValue']
       CallbackURLs:
         - !Ref AuthCallbackUrl
       LogoutURLs:
@@ -146,6 +159,20 @@ Resources:
     Properties:
       Domain: !Sub ${AWS::StackName}-auth
       UserPoolId: !Ref UserPool
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: GoogleIdpEnabled
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: 'email profile openid'
+      AttributeMapping:
+        email: email
 
   # PublicApiWafAcl:
   #   Type: AWS::WAFv2::WebACL
