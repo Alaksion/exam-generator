@@ -10,7 +10,8 @@ import {
 } from '../shared/repositories/certifications.js';
 import { requestExamGeneration, toCreatedExamResponse } from '../shared/services/examGeneration.js';
 import { requestPasswordReset } from '../shared/services/passwordReset.js';
-import { NotFoundError } from '../shared/errors.js';
+import { NotFoundError, UnauthorizedError } from '../shared/errors.js';
+import { getCurrentUser } from '../shared/services/identity.js';
 import {
   getCanonicalExam,
   getPresignedDownloadUrl,
@@ -60,6 +61,14 @@ vi.mock('../shared/services/passwordReset.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../shared/services/identity.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../shared/services/identity.js')>();
+  return {
+    ...actual,
+    getCurrentUser: vi.fn(),
+  };
+});
+
 const mockedGetByProviderCode = vi.mocked(getCertificationByProviderCode);
 const mockedCreateRecord = vi.mocked(createCertificationRecord);
 const mockedListCertifications = vi.mocked(listCertifications);
@@ -74,6 +83,7 @@ const mockedGetCanonicalExam = vi.mocked(getCanonicalExam);
 const mockedGetPresignedDownloadUrl = vi.mocked(getPresignedDownloadUrl);
 const mockedDeleteArtifacts = vi.mocked(deleteArtifacts);
 const mockedRequestPasswordReset = vi.mocked(requestPasswordReset);
+const mockedGetCurrentUser = vi.mocked(getCurrentUser);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -98,9 +108,7 @@ function makeEvent(
 
 describe('health endpoint', () => {
   it('returns 200 OK with a status payload', async () => {
-    const result = (await handler(
-      makeEvent('GET', '/v1/health'),
-    ));
+    const result = await handler(makeEvent('GET', '/v1/health'));
     const body = JSON.parse(result.body ?? '{}') as { status: string };
 
     expect(result.statusCode).toBe(200);
@@ -113,7 +121,9 @@ describe('POST /v1/auth/forgot-password', () => {
   it('returns ok and proxies the reset request', async () => {
     mockedRequestPasswordReset.mockResolvedValue({ status: 'ok' });
 
-    const result = await handler(makeEvent('POST', '/v1/auth/forgot-password', { email: 'Alice@Example.com' }));
+    const result = await handler(
+      makeEvent('POST', '/v1/auth/forgot-password', { email: 'Alice@Example.com' }),
+    );
     const body = JSON.parse(result.body ?? '{}') as { status: string };
 
     expect(result.statusCode).toBe(200);
@@ -131,37 +141,88 @@ describe('POST /v1/auth/forgot-password', () => {
   });
 });
 
+describe('GET /v1/me', () => {
+  const meUser = {
+    userId: 'sub-alice',
+    email: 'alice@example.com',
+    role: 'customer' as const,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  it('returns the caller identity for an authenticated user', async () => {
+    mockedGetCurrentUser.mockResolvedValue(meUser);
+
+    const result = await handler(makeEvent('GET', '/v1/me'));
+    const body = JSON.parse(result.body ?? '{}') as {
+      sub: string;
+      email: string;
+      role: string;
+      createdAt: string;
+    };
+
+    expect(result.statusCode).toBe(200);
+    expect(body).toEqual({
+      sub: 'sub-alice',
+      email: 'alice@example.com',
+      role: 'customer',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('returns 401 Unauthorized without a valid token', async () => {
+    mockedGetCurrentUser.mockRejectedValue(new UnauthorizedError());
+
+    const result = await handler(makeEvent('GET', '/v1/me'));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(401);
+    expect(body.error).toBe('Unauthorized');
+  });
+
+  it('returns 401 Unauthorized when no Users row exists', async () => {
+    mockedGetCurrentUser.mockRejectedValue(
+      new UnauthorizedError('No account found for this identity.'),
+    );
+
+    const result = await handler(makeEvent('GET', '/v1/me'));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(401);
+    expect(body.error).toBe('Unauthorized');
+  });
+});
+
 describe('CORS handling', () => {
   it('echoes Access-Control-Allow-Origin for an allowed origin', async () => {
-    const result = (await handler(
+    const result = await handler(
       makeEvent('GET', '/v1/health', undefined, undefined, {
         Origin: 'http://localhost:5173',
       }),
-    ));
+    );
 
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
   });
 
   it('omits Access-Control-Allow-Origin for a disallowed origin', async () => {
-    const result = (await handler(
+    const result = await handler(
       makeEvent('GET', '/v1/health', undefined, undefined, {
         Origin: 'https://evil.example.com',
       }),
-    ));
+    );
 
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBeUndefined();
   });
 
   it('answers OPTIONS with CORS headers for an allowed origin', async () => {
-    const result = (await handler(
+    const result = await handler(
       makeEvent('OPTIONS', '/v1/certifications', undefined, undefined, {
         Origin: 'http://localhost:5173',
         'Access-Control-Request-Method': 'GET',
         'Access-Control-Request-Headers': 'content-type,authorization',
       }),
-    ));
+    );
 
     expect(result.statusCode).toBe(204);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBe('http://localhost:5173');
@@ -174,9 +235,7 @@ describe('POST /v1/certifications', () => {
     mockedGetByProviderCode.mockResolvedValue(null);
     mockedCreateRecord.mockResolvedValue(undefined);
 
-    const result = (await handler(
-      makeEvent('POST', '/v1/certifications', certificationInput),
-    ));
+    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -201,9 +260,7 @@ describe('POST /v1/certifications', () => {
   it('returns 400 Bad Request for invalid input', async () => {
     mockedGetByProviderCode.mockResolvedValue(null);
 
-    const result = (await handler(
-      makeEvent('POST', '/v1/certifications', {}),
-    ));
+    const result = await handler(makeEvent('POST', '/v1/certifications', {}));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -213,9 +270,7 @@ describe('POST /v1/certifications', () => {
   it('returns 409 Conflict for duplicate provider+code', async () => {
     mockedGetByProviderCode.mockResolvedValue(certification);
 
-    const result = (await handler(
-      makeEvent('POST', '/v1/certifications', certificationInput),
-    ));
+    const result = await handler(makeEvent('POST', '/v1/certifications', certificationInput));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -227,17 +282,15 @@ describe('GET /v1/certifications', () => {
   it('returns active certifications without promptTemplate', async () => {
     mockedListCertifications.mockResolvedValue([certification]);
 
-    const result = (await handler(
-      makeEvent('GET', '/v1/certifications'),
-    ));
+    const result = await handler(makeEvent('GET', '/v1/certifications'));
     const body = JSON.parse(result.body ?? '{}') as { items: Array<{ config: object }> };
 
     expect(result.statusCode).toBe(200);
     expect(body.items).toHaveLength(1);
     expect(body.items[0].config).not.toHaveProperty('promptTemplate');
-    const topics = (body.items[0].config as { domains: Array<{ topics: unknown[] }> }).domains.flatMap(
-      (domain) => domain.topics,
-    );
+    const topics = (
+      body.items[0].config as { domains: Array<{ topics: unknown[] }> }
+    ).domains.flatMap((domain) => domain.topics);
     expect(topics).toHaveLength(5);
     for (const topic of topics) {
       expect(topic).toHaveProperty('context');
@@ -249,9 +302,9 @@ describe('GET /v1/certifications/{id}', () => {
   it('returns the certification with topic context', async () => {
     mockedGetById.mockResolvedValue(certification);
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('GET', '/v1/certifications/11111111-1111-1111-1111-111111111111'),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       config: { domains: Array<{ topics: Array<{ name: string; context: string }> }> };
@@ -270,9 +323,7 @@ describe('GET /v1/certifications/{id}', () => {
   it('returns 404 Not Found for unknown id', async () => {
     mockedGetById.mockResolvedValue(null);
 
-    const result = (await handler(
-      makeEvent('GET', '/v1/certifications/unknown-id'),
-    ));
+    const result = await handler(makeEvent('GET', '/v1/certifications/unknown-id'));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -285,13 +336,13 @@ describe('PUT /v1/certifications/{id}', () => {
     mockedGetById.mockResolvedValue(certification);
     mockedUpdateRecord.mockResolvedValue(undefined);
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent(
         'PUT',
         '/v1/certifications/11111111-1111-1111-1111-111111111111',
         certificationUpdate,
       ),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       provider: string;
@@ -305,12 +356,12 @@ describe('PUT /v1/certifications/{id}', () => {
   });
 
   it('returns 400 Bad Request when provider or code is included', async () => {
-    const result = (await handler(
+    const result = await handler(
       makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         provider: 'azure',
       }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -320,9 +371,9 @@ describe('PUT /v1/certifications/{id}', () => {
   it('returns 404 Not Found for unknown id', async () => {
     mockedGetById.mockResolvedValue(null);
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('PUT', '/v1/certifications/unknown-id', certificationUpdate),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -332,12 +383,12 @@ describe('PUT /v1/certifications/{id}', () => {
   it('returns 400 Bad Request for invalid config', async () => {
     mockedGetById.mockResolvedValue(certification);
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', {
         ...certificationUpdate,
         config: { ...certificationUpdate.config, questionCount: 0 },
       }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -364,9 +415,9 @@ describe('POST /v1/exams', () => {
     } as unknown as Parameters<typeof toCreatedExamResponse>[0]);
     mockedToCreatedExamResponse.mockReturnValue(examResponse);
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as typeof examResponse;
 
     expect(result.statusCode).toBe(201);
@@ -375,9 +426,7 @@ describe('POST /v1/exams', () => {
   });
 
   it('returns 400 Bad Request when certificationId is missing', async () => {
-    const result = (await handler(
-      makeEvent('POST', '/v1/exams', {}),
-    ));
+    const result = await handler(makeEvent('POST', '/v1/exams', {}));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -386,9 +435,7 @@ describe('POST /v1/exams', () => {
   });
 
   it('returns 400 Bad Request when certificationId is not a valid UUID', async () => {
-    const result = (await handler(
-      makeEvent('POST', '/v1/exams', { certificationId: 'not-a-uuid' }),
-    ));
+    const result = await handler(makeEvent('POST', '/v1/exams', { certificationId: 'not-a-uuid' }));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -399,9 +446,9 @@ describe('POST /v1/exams', () => {
   it('returns 404 Not Found when certification is unknown or inactive', async () => {
     mockedRequestExamGeneration.mockRejectedValue(new NotFoundError('Certification'));
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('POST', '/v1/exams', { certificationId: certification.id }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -441,9 +488,7 @@ describe('GET /v1/exams/{id}/status', () => {
   it('returns the status payload for a ready exam', async () => {
     mockedGetExamById.mockResolvedValue(readyExam);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}/status`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}/status`));
     const body = JSON.parse(result.body ?? '{}') as {
       id: string;
       status: string;
@@ -462,9 +507,7 @@ describe('GET /v1/exams/{id}/status', () => {
   it('returns 404 Not Found for an unknown exam', async () => {
     mockedGetExamById.mockResolvedValue(null);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}/status`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}/status`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -477,9 +520,7 @@ describe('GET /v1/exams/{id}', () => {
     mockedGetExamById.mockResolvedValue(readyExam);
     mockedGetCanonicalExam.mockResolvedValue(fullExam);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}`));
     const body = JSON.parse(result.body ?? '{}') as {
       schemaVersion: string;
       status: string;
@@ -496,9 +537,7 @@ describe('GET /v1/exams/{id}', () => {
   it('returns 409 ExamNotReady while the exam is GENERATING', async () => {
     mockedGetExamById.mockResolvedValue(generatingExam);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -509,9 +548,7 @@ describe('GET /v1/exams/{id}', () => {
   it('returns 404 Not Found for an unknown exam', async () => {
     mockedGetExamById.mockResolvedValue(null);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -523,9 +560,7 @@ describe('GET /v1/exams', () => {
   it('defaults to status=READY and returns exams with a cursor object', async () => {
     mockedListExams.mockResolvedValue({ exams: [readyExam] });
 
-    const result = (await handler(
-      makeEvent('GET', '/v1/exams'),
-    ));
+    const result = await handler(makeEvent('GET', '/v1/exams'));
     const body = JSON.parse(result.body ?? '{}') as {
       items: unknown[];
       cursor: { nextCursor: string | null; hasNextPage: boolean };
@@ -548,7 +583,7 @@ describe('GET /v1/exams', () => {
       nextCursor: 'c3RhcnRLZXk=',
     });
 
-    const result = (await handler(
+    const result = await handler(
       makeEvent('GET', '/v1/exams', undefined, {
         status: 'GENERATING',
         provider: 'aws',
@@ -556,7 +591,7 @@ describe('GET /v1/exams', () => {
         limit: '10',
         cursor: 'c3RhcnRLZXk=',
       }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as {
       items: unknown[];
       cursor: { nextCursor: string; hasNextPage: boolean };
@@ -576,9 +611,9 @@ describe('GET /v1/exams', () => {
   });
 
   it('returns 400 Bad Request for invalid query params', async () => {
-    const result = (await handler(
+    const result = await handler(
       makeEvent('GET', '/v1/exams', undefined, { limit: 'not-a-number' }),
-    ));
+    );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(400);
@@ -594,9 +629,7 @@ describe('GET /v1/exams/{id}/download', () => {
     mockedGetExamById.mockResolvedValue(readyExam);
     mockedGetPresignedDownloadUrl.mockResolvedValue({ url: downloadUrl, expiresAt });
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}/download`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}/download`));
     const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
 
     expect(result.statusCode).toBe(200);
@@ -608,9 +641,7 @@ describe('GET /v1/exams/{id}/download', () => {
   it('returns 409 ExamNotReady while the exam is GENERATING', async () => {
     mockedGetExamById.mockResolvedValue(generatingExam);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}/download`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}/download`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -625,9 +656,7 @@ describe('DELETE /v1/exams/{id}', () => {
     mockedDeleteArtifacts.mockResolvedValue(undefined);
     mockedDeleteExam.mockResolvedValue(undefined);
 
-    const result = (await handler(
-      makeEvent('DELETE', `/v1/exams/${examId}`),
-    ));
+    const result = await handler(makeEvent('DELETE', `/v1/exams/${examId}`));
 
     expect(result.statusCode).toBe(204);
     expect(mockedDeleteArtifacts).toHaveBeenCalledWith([readyExam.s3KeyJson, readyExam.s3KeyPdf]);
@@ -638,9 +667,7 @@ describe('DELETE /v1/exams/{id}', () => {
     mockedGetExamById.mockResolvedValue(generatingExam);
     mockedDeleteExam.mockResolvedValue(undefined);
 
-    const result = (await handler(
-      makeEvent('DELETE', `/v1/exams/${examId}`),
-    ));
+    const result = await handler(makeEvent('DELETE', `/v1/exams/${examId}`));
 
     expect(result.statusCode).toBe(204);
     expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
@@ -650,9 +677,7 @@ describe('DELETE /v1/exams/{id}', () => {
   it('returns 404 Not Found for an unknown exam', async () => {
     mockedGetExamById.mockResolvedValue(null);
 
-    const result = (await handler(
-      makeEvent('GET', `/v1/exams/${examId}/download`),
-    ));
+    const result = await handler(makeEvent('GET', `/v1/exams/${examId}/download`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
