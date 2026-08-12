@@ -29,6 +29,7 @@ vi.mock('@aws-sdk/lib-dynamodb', () => {
 
 const examBase = {
   certificationId: '11111111-1111-1111-1111-111111111111',
+  ownerId: 'sub-alice',
   provider: 'aws',
   title: 'AWS Certified Cloud Practitioner - Practice Exam',
   createdAt: '2026-07-31T12:00:00.000Z',
@@ -95,6 +96,41 @@ describe('listExams', () => {
     expect(queryInput.ExpressionAttributeValues[':certificationId']).toBe(examBase.certificationId);
   });
 
+  it('queries the owner index for an owner-scoped list', async () => {
+    mockClient.send.mockResolvedValue({
+      Items: [readyExam('1'), generatingExam('2')],
+    });
+
+    const result = await listExams({ ownerId: 'sub-alice' });
+
+    expect(result.exams).toHaveLength(1);
+    expect(result.exams[0].ownerId).toBe('sub-alice');
+
+    const queryInput = mockClient.send.mock.calls[0][0] as {
+      IndexName: string;
+      ExpressionAttributeValues: Record<string, unknown>;
+    };
+    expect(queryInput.IndexName).toBe('OwnerCreatedAtIndex');
+    expect(queryInput.ExpressionAttributeValues[':ownerId']).toBe('sub-alice');
+  });
+
+  it('filters an owner-scoped list by certificationId in memory', async () => {
+    mockClient.send.mockResolvedValue({
+      Items: [
+        readyExam('1'),
+        { ...readyExam('2'), certificationId: '99999999-9999-9999-9999-999999999999' },
+      ],
+    });
+
+    const result = await listExams({
+      ownerId: 'sub-alice',
+      certificationId: examBase.certificationId,
+    });
+
+    expect(result.exams).toHaveLength(1);
+    expect(result.exams[0].id).toBe('1');
+  });
+
   it('paginates until the requested limit is reached and returns the last cursor', async () => {
     mockClient.send
       .mockResolvedValueOnce({
@@ -133,6 +169,31 @@ describe('listExams', () => {
 
     const queryInput = mockClient.send.mock.calls[0][0] as { ExclusiveStartKey: Record<string, string> };
     expect(queryInput.ExclusiveStartKey.id).toBe('prev');
+  });
+
+  it('does not drop matching exams when an in-memory filter page would overshoot the limit', async () => {
+    const pagedKey = (marker: string) =>
+      ({ id: marker, ownerId: 'sub-alice', createdAt: examBase.createdAt });
+
+    mockClient.send
+      .mockResolvedValueOnce({
+        Items: [readyExam('1'), generatingExam('2')],
+        LastEvaluatedKey: pagedKey('1'),
+      })
+      .mockResolvedValueOnce({
+        Items: [readyExam('3'), readyExam('4'), readyExam('5')],
+        LastEvaluatedKey: pagedKey('3'),
+      });
+
+    const result = await listExams({ limit: 3, ownerId: 'sub-alice' });
+
+    // One READY row on page one (the other is GENERATING and filtered out), so the
+    // second page fetch must be capped at the two that remain — it must not over-read
+    // a full page and strand matching rows behind the cursor.
+    expect(result.exams).toHaveLength(3);
+    expect(result.nextCursor).toBeDefined();
+    const secondPage = mockClient.send.mock.calls[1][0] as { Limit: number };
+    expect(secondPage.Limit).toBe(2);
   });
 });
 

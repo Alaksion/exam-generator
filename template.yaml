@@ -374,6 +374,8 @@ Resources:
           AttributeType: S
         - AttributeName: certificationId
           AttributeType: S
+        - AttributeName: ownerId
+          AttributeType: S
       KeySchema:
         - AttributeName: id
           KeyType: HASH
@@ -389,6 +391,14 @@ Resources:
         - IndexName: CertificationIdIndex
           KeySchema:
             - AttributeName: certificationId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: OwnerCreatedAtIndex
+          KeySchema:
+            - AttributeName: ownerId
               KeyType: HASH
             - AttributeName: createdAt
               KeyType: RANGE

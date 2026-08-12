@@ -6,6 +6,7 @@ const exam: FullExam = {
   schemaVersion: '1.0.0',
   id: '11111111-1111-1111-1111-111111111111',
   certificationId: '22222222-2222-2222-2222-222222222222',
+  ownerId: 'sub-alice',
   provider: 'aws',
   title: 'Sample Certification Exam',
   status: 'READY',

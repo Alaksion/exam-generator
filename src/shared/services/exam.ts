@@ -6,10 +6,11 @@ export function generateExamTitle(certification: Certification, timestamp: Date)
   return `${certification.name} - Practice Exam ${timestamp.toISOString()}`;
 }
 
-export function createExam(certification: Certification, now = new Date()): Exam {
+export function createExam(certification: Certification, ownerId: string, now = new Date()): Exam {
   return {
     id: uuidv4(),
     certificationId: certification.id,
+    ownerId,
     provider: certification.provider,
     title: generateExamTitle(certification, now),
     status: 'PENDING',

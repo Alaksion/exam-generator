@@ -132,6 +132,7 @@ export type ExamStatus = z.infer<typeof ExamStatus>;
 export const Exam = z.object({
   id: z.string().uuid(),
   certificationId: z.string().uuid(),
+  ownerId: z.string().min(1),
   provider: Provider,
   title: z.string().min(1),
   status: ExamStatus,

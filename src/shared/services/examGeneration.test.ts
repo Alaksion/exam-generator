@@ -62,9 +62,10 @@ describe('requestExamGeneration', () => {
     vi.mocked(getCertificationById).mockResolvedValue(certification);
     vi.mocked(createExamRecord).mockResolvedValue(undefined);
 
-    const exam = await requestExamGeneration(certification.id, now);
+    const exam = await requestExamGeneration(certification.id, 'sub-alice', now);
 
     expect(exam.certificationId).toBe(certification.id);
+    expect(exam.ownerId).toBe('sub-alice');
     expect(exam.status).toBe('PENDING');
     expect(createExamRecord).toHaveBeenCalledWith(exam);
 
@@ -84,14 +85,14 @@ describe('requestExamGeneration', () => {
   it('throws NotFoundError when certification is unknown', async () => {
     vi.mocked(getCertificationById).mockResolvedValue(null);
 
-    await expect(requestExamGeneration(certification.id, now)).rejects.toThrow(NotFoundError);
+    await expect(requestExamGeneration(certification.id, 'sub-alice', now)).rejects.toThrow(NotFoundError);
     expect(createExamRecord).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundError when certification is inactive', async () => {
     vi.mocked(getCertificationById).mockResolvedValue({ ...certification, isActive: false });
 
-    await expect(requestExamGeneration(certification.id, now)).rejects.toThrow(NotFoundError);
+    await expect(requestExamGeneration(certification.id, 'sub-alice', now)).rejects.toThrow(NotFoundError);
     expect(createExamRecord).not.toHaveBeenCalled();
   });
 });
@@ -101,6 +102,7 @@ describe('toCreatedExamResponse', () => {
     const createdExam = {
       id: '11111111-1111-1111-1111-111111111111',
       certificationId: certification.id,
+      ownerId: 'sub-alice',
       provider: certification.provider,
       title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
       status: 'PENDING' as const,

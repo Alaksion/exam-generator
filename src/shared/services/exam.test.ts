@@ -14,12 +14,13 @@ describe('generateExamTitle', () => {
 });
 
 describe('createExam', () => {
-  it('creates an exam in PENDING status with a generated id and title', () => {
+  it('creates an exam in PENDING status with a generated id, owner, and title', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
 
-    const exam = createExam(certification, now);
+    const exam = createExam(certification, 'sub-alice', now);
 
     expect(exam.certificationId).toBe(certification.id);
+    expect(exam.ownerId).toBe('sub-alice');
     expect(exam.provider).toBe(certification.provider);
     expect(exam.status).toBe('PENDING');
     expect(exam.finishedAt).toBeNull();
@@ -34,7 +35,7 @@ describe('createExam', () => {
 describe('transitionExamStatus', () => {
   it('claims a PENDING exam to GENERATING without setting finishedAt', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
-    const exam = createExam(certification, now);
+    const exam = createExam(certification, 'sub-alice', now);
 
     const generating = transitionExamStatus(exam, 'GENERATING', now);
 
@@ -45,7 +46,7 @@ describe('transitionExamStatus', () => {
 
   it('transitions a GENERATING exam to READY with a finishedAt timestamp', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
-    const generating = transitionExamStatus(createExam(certification, now), 'GENERATING', now);
+    const generating = transitionExamStatus(createExam(certification, 'sub-alice', now), 'GENERATING', now);
 
     const ready = transitionExamStatus(generating, 'READY', now);
 
@@ -55,7 +56,7 @@ describe('transitionExamStatus', () => {
 
   it('transitions a GENERATING exam to FAILED with a finishedAt timestamp', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
-    const generating = transitionExamStatus(createExam(certification, now), 'GENERATING', now);
+    const generating = transitionExamStatus(createExam(certification, 'sub-alice', now), 'GENERATING', now);
 
     const failed = transitionExamStatus(generating, 'FAILED', now);
 
@@ -65,7 +66,7 @@ describe('transitionExamStatus', () => {
 
   it('transitions a PENDING exam to FAILED with a finishedAt timestamp', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
-    const exam = createExam(certification, now);
+    const exam = createExam(certification, 'sub-alice', now);
 
     const failed = transitionExamStatus(exam, 'FAILED', now);
 
@@ -75,7 +76,7 @@ describe('transitionExamStatus', () => {
 
   it('throws when transitioning a PENDING exam directly to READY', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
-    const exam = createExam(certification, now);
+    const exam = createExam(certification, 'sub-alice', now);
 
     expect(() => transitionExamStatus(exam, 'READY', now)).toThrow(ConflictError);
   });
@@ -83,7 +84,7 @@ describe('transitionExamStatus', () => {
   it('throws when transitioning from a terminal status', () => {
     const now = new Date('2026-07-28T12:00:00.000Z');
     const ready = transitionExamStatus(
-      transitionExamStatus(createExam(certification, now), 'GENERATING', now),
+      transitionExamStatus(createExam(certification, 'sub-alice', now), 'GENERATING', now),
       'READY',
       now,
     );
