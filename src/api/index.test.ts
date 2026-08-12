@@ -457,7 +457,11 @@ describe('removed customer-facing certification write routes', () => {
 
   it('returns 404 for PUT /v1/certifications/{id}', async () => {
     const result = await handler(
-      makeEvent('PUT', '/v1/certifications/11111111-1111-1111-1111-111111111111', certificationUpdate),
+      makeEvent(
+        'PUT',
+        '/v1/certifications/11111111-1111-1111-1111-111111111111',
+        certificationUpdate,
+      ),
     );
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -818,7 +822,10 @@ describe('DELETE /v1/exams/{id}', () => {
 describe('GET /v1/admin/exams', () => {
   it('returns exams from all users for an admin', async () => {
     mockedGetCurrentUser.mockResolvedValue(adminUser);
-    mockedListExams.mockResolvedValue({ exams: [readyExam, otherUserExam], nextCursor: 'c3RhcnRLZXk=' });
+    mockedListExams.mockResolvedValue({
+      exams: [readyExam, otherUserExam],
+      nextCursor: 'c3RhcnRLZXk=',
+    });
 
     const result = await handler(makeEvent('GET', '/v1/admin/exams'));
     const body = JSON.parse(result.body ?? '{}') as {
@@ -902,9 +909,7 @@ describe('GET /v1/admin/exams/{id}', () => {
     mockedGetCurrentUser.mockResolvedValue(adminUser);
     mockedGetExamById.mockResolvedValue({ ...generatingExam, ownerId: 'sub-bob' });
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${generatingExam.id}`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${generatingExam.id}`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(409);
@@ -974,9 +979,7 @@ describe('GET /v1/admin/exams/{id}/download', () => {
     mockedGetExamById.mockResolvedValue(otherUserExam);
     mockedGetPresignedDownloadUrl.mockResolvedValue({ url: downloadUrl, expiresAt });
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`));
     const body = JSON.parse(result.body ?? '{}') as { downloadUrl: string; expiresAt: string };
 
     expect(result.statusCode).toBe(200);
@@ -989,9 +992,7 @@ describe('GET /v1/admin/exams/{id}/download', () => {
     mockedGetCurrentUser.mockResolvedValue(currentUser);
     mockedGetExamById.mockResolvedValue(otherUserExam);
 
-    const result = await handler(
-      makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`),
-    );
+    const result = await handler(makeEvent('GET', `/v1/admin/exams/${otherUserExam.id}/download`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(403);
@@ -1081,6 +1082,18 @@ describe('GET /v1/admin/users', () => {
       limit: 5,
       cursor: 'c3RhcnRLZXk=',
     });
+  });
+
+  it('searches by sub', async () => {
+    mockedGetCurrentUser.mockResolvedValue(adminUser);
+    mockedListUsers.mockResolvedValue({ users: [targetUser] });
+
+    const result = await handler(
+      makeEvent('GET', '/v1/admin/users', undefined, { sub: targetUser.userId }),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockedListUsers).toHaveBeenCalledWith({ sub: targetUser.userId, limit: 20 });
   });
 
   it('returns 400 Bad Request for invalid query params', async () => {

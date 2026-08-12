@@ -5,8 +5,13 @@ import {
   QueryCommand,
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
+import { Role } from '../src/shared/types.js';
 
-type UserRow = { userId: string; email: string; role: string };
+// This script deliberately re-implements the small set of Users-table lookups it
+// needs instead of importing src/shared/repositories/users.ts: that repository
+// pulls in config.ts, which requires every Lambda env var at import time. The
+// bootstrap runs with only DYNAMODB_USERS_TABLE set.
+type UserRow = { userId: string; email: string; role: Role };
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -52,7 +57,7 @@ async function promoteAdmin(subOrEmail: string): Promise<void> {
     throw new Error(`No user found for ${subOrEmail}`);
   }
 
-  if (user.role === 'admin') {
+  if (user.role === Role.enum.admin) {
     console.log(`User ${user.email} is already an admin.`);
     return;
   }
@@ -63,7 +68,7 @@ async function promoteAdmin(subOrEmail: string): Promise<void> {
       Key: { email: user.email },
       UpdateExpression: 'SET #role = :role',
       ExpressionAttributeNames: { '#role': 'role' },
-      ExpressionAttributeValues: { ':role': 'admin' },
+      ExpressionAttributeValues: { ':role': Role.enum.admin },
       ConditionExpression: 'attribute_exists(email)',
     }),
   );

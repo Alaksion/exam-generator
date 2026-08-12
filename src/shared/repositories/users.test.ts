@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GetCommand, PutCommand, QueryCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import {
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  ScanCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 import * as usersRepo from './users.js';
 import { User } from '../types.js';
 
@@ -153,6 +159,13 @@ describe('listUsers', () => {
     expect(second.users).toEqual([]);
     const command = sendMock.mock.calls[1][0] as ScanCommand;
     expect(command.input.ExclusiveStartKey).toEqual({ email: customerUser.email });
+  });
+
+  it('rejects a malformed cursor', async () => {
+    await expect(usersRepo.listUsers({ cursor: '%%%not-base64-json%%%' })).rejects.toThrow(
+      expect.objectContaining({ statusCode: 400 }),
+    );
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });
 

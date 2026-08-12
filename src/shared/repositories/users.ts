@@ -8,6 +8,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { config } from '../config.js';
+import { InvalidRequestError } from '../errors.js';
 import { Role, User } from '../types.js';
 
 const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
@@ -24,7 +25,11 @@ function encodeCursor(key: Record<string, unknown>): string {
 }
 
 function decodeCursor(cursor: string): Record<string, unknown> {
-  return JSON.parse(Buffer.from(cursor, 'base64').toString()) as Record<string, unknown>;
+  try {
+    return JSON.parse(Buffer.from(cursor, 'base64').toString()) as Record<string, unknown>;
+  } catch {
+    throw new InvalidRequestError('The cursor is malformed.');
+  }
 }
 
 export async function listUsers(
