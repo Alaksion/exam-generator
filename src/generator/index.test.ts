@@ -56,6 +56,7 @@ const keys = buildArtifactKeys(examId);
 const pendingExam: Exam = {
   id: examId,
   certificationId: certification.id,
+  ownerId: 'sub-alice',
   provider: certification.provider,
   title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
   status: 'PENDING',

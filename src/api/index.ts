@@ -73,11 +73,13 @@ router.register('PUT', '/v1/certifications/{id}', async (event, params) => {
 
 router.register('POST', '/v1/exams', async (event) => {
   const body = RequestExamGeneration.parse(parseBody(event));
-  const exam = await requestExamGeneration(body.certificationId);
+  const user = await getCurrentUser(event);
+  const exam = await requestExamGeneration(body.certificationId, user.userId);
   return jsonResponse(201, toCreatedExamResponse(exam));
 });
 
 router.register('GET', '/v1/exams', async (event) => {
+  const user = await getCurrentUser(event);
   const query = z
     .object({
       status: ExamStatus.default('READY'),
@@ -94,7 +96,7 @@ router.register('GET', '/v1/exams', async (event) => {
       ),
     );
 
-  const { exams, nextCursor } = await listExams(query);
+  const { exams, nextCursor } = await listExams({ ...query, ownerId: user.userId });
 
   return jsonResponse(200, {
     items: exams,
@@ -105,16 +107,17 @@ router.register('GET', '/v1/exams', async (event) => {
   });
 });
 
-async function loadExamOrThrow(id: string): Promise<Exam> {
+async function loadOwnedExamOrThrow(id: string, ownerId: string): Promise<Exam> {
   const exam = await getExamById(id);
-  if (!exam) {
+  if (!exam || exam.ownerId !== ownerId) {
     throw new NotFoundError('Exam');
   }
   return exam;
 }
 
-router.register('GET', '/v1/exams/{id}', async (_event, params) => {
-  const exam = await loadExamOrThrow(params.id);
+router.register('GET', '/v1/exams/{id}', async (event, params) => {
+  const user = await getCurrentUser(event);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   if (exam.status !== 'READY') {
     throw new ExamNotReadyError();
   }
@@ -125,8 +128,9 @@ router.register('GET', '/v1/exams/{id}', async (_event, params) => {
   return jsonResponse(200, fullExam);
 });
 
-router.register('GET', '/v1/exams/{id}/status', async (_event, params) => {
-  const exam = await loadExamOrThrow(params.id);
+router.register('GET', '/v1/exams/{id}/status', async (event, params) => {
+  const user = await getCurrentUser(event);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   return jsonResponse(200, {
     id: exam.id,
     status: exam.status,
@@ -135,8 +139,9 @@ router.register('GET', '/v1/exams/{id}/status', async (_event, params) => {
   });
 });
 
-router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
-  const exam = await loadExamOrThrow(params.id);
+router.register('GET', '/v1/exams/{id}/download', async (event, params) => {
+  const user = await getCurrentUser(event);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
   if (exam.status !== 'READY' || !exam.s3KeyPdf) {
     throw new ExamNotReadyError();
   }
@@ -144,8 +149,9 @@ router.register('GET', '/v1/exams/{id}/download', async (_event, params) => {
   return jsonResponse(200, { downloadUrl: url, expiresAt });
 });
 
-router.register('DELETE', '/v1/exams/{id}', async (_event, params) => {
-  const exam = await loadExamOrThrow(params.id);
+router.register('DELETE', '/v1/exams/{id}', async (event, params) => {
+  const user = await getCurrentUser(event);
+  const exam = await loadOwnedExamOrThrow(params.id, user.userId);
 
   const s3Keys = [exam.s3KeyJson, exam.s3KeyPdf].filter((key): key is string => Boolean(key));
   if (s3Keys.length > 0) {

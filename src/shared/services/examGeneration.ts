@@ -39,6 +39,7 @@ export async function sendGeneratorMessage(message: GeneratorMessage): Promise<v
 
 export async function requestExamGeneration(
   certificationId: string,
+  ownerId: string,
   now = new Date(),
 ): Promise<Exam> {
   const certification = await getCertificationById(certificationId);
@@ -46,7 +47,7 @@ export async function requestExamGeneration(
     throw new NotFoundError('Certification');
   }
 
-  const exam = createExam(certification, now);
+  const exam = createExam(certification, ownerId, now);
   await createExamRecord(exam);
 
   const correlationId = uuidv4();

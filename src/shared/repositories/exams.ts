@@ -88,6 +88,7 @@ export interface ListExamsFilters {
   status?: ExamStatus;
   provider?: string;
   certificationId?: string;
+  ownerId?: string;
   limit?: number;
   cursor?: string;
 }
@@ -108,8 +109,37 @@ export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exa
   let lastEvaluatedKey: Record<string, unknown> | undefined = filters.cursor ? decodeCursor(filters.cursor) : undefined;
 
   do {
+    // Fetch only as many raw rows as we still need: in-memory filters (status,
+    // provider, certificationId) can otherwise over-fetch a page and, once sliced,
+    // drop matching rows while the cursor has already advanced past them.
+    const remaining = limit - exams.length;
+
     let result;
-    if (!filters.certificationId) {
+    if (filters.ownerId) {
+      result = await client.send(
+        new QueryCommand({
+          TableName: config.examsTable,
+          IndexName: 'OwnerCreatedAtIndex',
+          KeyConditionExpression: 'ownerId = :ownerId',
+          ExpressionAttributeValues: { ':ownerId': filters.ownerId },
+          ScanIndexForward: false,
+          Limit: remaining,
+          ExclusiveStartKey: lastEvaluatedKey,
+        }),
+      );
+    } else if (filters.certificationId) {
+      result = await client.send(
+        new QueryCommand({
+          TableName: config.examsTable,
+          IndexName: 'CertificationIdIndex',
+          KeyConditionExpression: 'certificationId = :certificationId',
+          ExpressionAttributeValues: { ':certificationId': filters.certificationId },
+          ScanIndexForward: false,
+          Limit: remaining,
+          ExclusiveStartKey: lastEvaluatedKey,
+        }),
+      );
+    } else {
       result = await client.send(
         new QueryCommand({
           TableName: config.examsTable,
@@ -118,26 +148,19 @@ export async function listExams(filters: ListExamsFilters): Promise<{ exams: Exa
           ExpressionAttributeNames: { '#status': 'status' },
           ExpressionAttributeValues: { ':status': status },
           ScanIndexForward: false,
-          Limit: limit,
-          ExclusiveStartKey: lastEvaluatedKey,
-        }),
-      );
-    } else {
-      result = await client.send(
-        new QueryCommand({
-          TableName: config.examsTable,
-          IndexName: 'CertificationIdIndex',
-          KeyConditionExpression: 'certificationId = :certificationId',
-          ExpressionAttributeValues: { ':certificationId': filters.certificationId },
-          ScanIndexForward: false,
-          Limit: limit,
+          Limit: remaining,
           ExclusiveStartKey: lastEvaluatedKey,
         }),
       );
     }
 
     let page = (result.Items as unknown as Exam[]) ?? [];
-    page = page.filter((exam) => exam.status === status && (!filters.provider || exam.provider === filters.provider));
+    page = page.filter(
+      (exam) =>
+        exam.status === status &&
+        (!filters.provider || exam.provider === filters.provider) &&
+        (!filters.certificationId || exam.certificationId === filters.certificationId),
+    );
     exams.push(...page);
     lastEvaluatedKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
   } while (lastEvaluatedKey && exams.length < limit);

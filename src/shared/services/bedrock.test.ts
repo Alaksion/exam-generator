@@ -502,6 +502,7 @@ describe('generateExamQuestions', () => {
   const exam = {
     id: '22222222-2222-2222-2222-222222222222',
     certificationId: certification.id,
+    ownerId: 'sub-alice',
     provider: 'aws' as const,
     title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
     status: 'GENERATING' as const,

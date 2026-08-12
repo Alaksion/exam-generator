@@ -85,8 +85,16 @@ const mockedDeleteArtifacts = vi.mocked(deleteArtifacts);
 const mockedRequestPasswordReset = vi.mocked(requestPasswordReset);
 const mockedGetCurrentUser = vi.mocked(getCurrentUser);
 
+const currentUser = {
+  userId: 'sub-alice',
+  email: 'alice@example.com',
+  role: 'customer' as const,
+  createdAt: '2026-01-01T00:00:00.000Z',
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedGetCurrentUser.mockResolvedValue(currentUser);
 });
 
 function makeEvent(
@@ -142,16 +150,8 @@ describe('POST /v1/auth/forgot-password', () => {
 });
 
 describe('GET /v1/me', () => {
-  const meUser = {
-    userId: 'sub-alice',
-    email: 'alice@example.com',
-    role: 'customer' as const,
-    createdAt: '2026-01-01T00:00:00.000Z',
-  };
-
   it('returns the caller identity for an authenticated user', async () => {
-    mockedGetCurrentUser.mockResolvedValue(meUser);
-
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as {
       sub: string;
@@ -171,7 +171,6 @@ describe('GET /v1/me', () => {
 
   it('returns 401 Unauthorized without a valid token', async () => {
     mockedGetCurrentUser.mockRejectedValue(new UnauthorizedError());
-
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -183,7 +182,6 @@ describe('GET /v1/me', () => {
     mockedGetCurrentUser.mockRejectedValue(
       new UnauthorizedError('No account found for this identity.'),
     );
-
     const result = await handler(makeEvent('GET', '/v1/me'));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
@@ -402,10 +400,12 @@ describe('POST /v1/exams', () => {
     status: 'PENDING' as const,
   };
 
-  it('returns 201 Created and requests exam generation', async () => {
+  it('returns 201 Created and requests exam generation for the caller', async () => {
+    mockedGetCurrentUser.mockResolvedValue(currentUser);
     mockedRequestExamGeneration.mockResolvedValue({
       ...examResponse,
       certificationId: certification.id,
+      ownerId: currentUser.userId,
       provider: certification.provider,
       title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
       createdAt: '2026-07-28T12:00:00.000Z',
@@ -422,7 +422,8 @@ describe('POST /v1/exams', () => {
 
     expect(result.statusCode).toBe(201);
     expect(body).toEqual(examResponse);
-    expect(mockedRequestExamGeneration).toHaveBeenCalledWith(certification.id);
+    expect(mockedGetCurrentUser).toHaveBeenCalled();
+    expect(mockedRequestExamGeneration).toHaveBeenCalledWith(certification.id, currentUser.userId);
   });
 
   it('returns 400 Bad Request when certificationId is missing', async () => {
@@ -461,6 +462,7 @@ const examId = '22222222-2222-2222-2222-222222222222';
 const readyExam = {
   id: examId,
   certificationId: certification.id,
+  ownerId: currentUser.userId,
   provider: 'aws' as const,
   title: 'AWS Certified Cloud Practitioner - Practice Exam',
   status: 'READY' as const,
@@ -468,6 +470,12 @@ const readyExam = {
   finishedAt: '2026-07-28T12:00:01.000Z',
   s3KeyJson: `exams/${examId}/exam.json`,
   s3KeyPdf: `exams/${examId}/exam.pdf`,
+};
+
+const otherUserExam = {
+  ...readyExam,
+  id: '33333333-3333-3333-3333-333333333333',
+  ownerId: 'sub-bob',
 };
 
 const generatingExam = {
@@ -508,6 +516,16 @@ describe('GET /v1/exams/{id}/status', () => {
     mockedGetExamById.mockResolvedValue(null);
 
     const result = await handler(makeEvent('GET', `/v1/exams/${examId}/status`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+  });
+
+  it('returns 404 Not Found for an exam owned by another user', async () => {
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/exams/${otherUserExam.id}/status`));
     const body = JSON.parse(result.body ?? '{}') as { error: string };
 
     expect(result.statusCode).toBe(404);
@@ -554,6 +572,17 @@ describe('GET /v1/exams/{id}', () => {
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
   });
+
+  it('returns 404 Not Found for an exam owned by another user', async () => {
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/exams/${otherUserExam.id}`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedGetCanonicalExam).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /v1/exams', () => {
@@ -573,6 +602,7 @@ describe('GET /v1/exams', () => {
       expect.objectContaining({
         status: 'READY',
         limit: 20,
+        ownerId: currentUser.userId,
       }),
     );
   });
@@ -607,6 +637,7 @@ describe('GET /v1/exams', () => {
       certificationId: certification.id,
       limit: 10,
       cursor: 'c3RhcnRLZXk=',
+      ownerId: currentUser.userId,
     });
   });
 
@@ -648,6 +679,17 @@ describe('GET /v1/exams/{id}/download', () => {
     expect(body.error).toBe('ExamNotReady');
     expect(mockedGetPresignedDownloadUrl).not.toHaveBeenCalled();
   });
+
+  it('returns 404 Not Found for an exam owned by another user', async () => {
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('GET', `/v1/exams/${otherUserExam.id}/download`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
+    expect(mockedGetPresignedDownloadUrl).not.toHaveBeenCalled();
+  });
 });
 
 describe('DELETE /v1/exams/{id}', () => {
@@ -683,6 +725,18 @@ describe('DELETE /v1/exams/{id}', () => {
     expect(result.statusCode).toBe(404);
     expect(body.error).toBe('NotFound');
 
+    expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
+    expect(mockedDeleteExam).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 Not Found for an exam owned by another user', async () => {
+    mockedGetExamById.mockResolvedValue(otherUserExam);
+
+    const result = await handler(makeEvent('DELETE', `/v1/exams/${otherUserExam.id}`));
+    const body = JSON.parse(result.body ?? '{}') as { error: string };
+
+    expect(result.statusCode).toBe(404);
+    expect(body.error).toBe('NotFound');
     expect(mockedDeleteArtifacts).not.toHaveBeenCalled();
     expect(mockedDeleteExam).not.toHaveBeenCalled();
   });
