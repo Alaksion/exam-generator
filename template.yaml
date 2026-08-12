@@ -7,14 +7,14 @@ Parameters:
     Type: String
     Default: dev
     Description: Deployment environment.
-  AuthDomainPrefix:
-    Type: String
-    Default: exam-generator
-    Description: Globally unique prefix for the Cognito Hosted UI domain.
   AuthCallbackUrl:
     Type: String
     Default: http://localhost:5173/callback
     Description: Callback URL registered on the user pool app client.
+  AuthLogoutUrl:
+    Type: String
+    Default: http://localhost:5173
+    Description: Logout URL registered on the user pool app client.
   BedrockModelDefault:
     Type: String
     Default: amazon.nova-lite-v1:0
@@ -75,7 +75,6 @@ Resources:
         Authorizers:
           CognitoJwtAuthorizer:
             UserPoolArn: !GetAtt UserPool.Arn
-        AddDefaultAuthorizerToCorsPreflight: false
       MethodSettings:
         - ResourcePath: /*
           HttpMethod: '*'
@@ -127,7 +126,7 @@ Resources:
       CallbackURLs:
         - !Ref AuthCallbackUrl
       LogoutURLs:
-        - http://localhost:5173
+        - !Ref AuthLogoutUrl
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows:
         - code
@@ -140,7 +139,7 @@ Resources:
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
-      Domain: !Sub ${AuthDomainPrefix}-${AWS::Region}
+      Domain: !Sub ${AWS::StackName}-auth
       UserPoolId: !Ref UserPool
 
   # PublicApiWafAcl:
