@@ -18,16 +18,55 @@ export function getIntEnv(name: string, defaultValue: number): number {
   return parsed;
 }
 
-export const config = {
-  region: process.env.AWS_REGION || 'us-east-1',
-  bedrockModelDefault: process.env.BEDROCK_MODEL_DEFAULT || 'amazon.nova-lite-v1:0',
-  certificationsTable: requireEnv('DYNAMODB_CERTIFICATIONS_TABLE'),
-  examsTable: requireEnv('DYNAMODB_EXAMS_TABLE'),
-usersTable: requireEnv('DYNAMODB_USERS_TABLE'),
-  cognitoUserPoolClientId: requireEnv('COGNITO_USER_POOL_CLIENT_ID'),
-  generatorQueueUrl: requireEnv('SQS_GENERATOR_QUEUE_URL'),
-  artifactsBucket: requireEnv('S3_ARTIFACTS_BUCKET'),
-  bedrockMaxAttempts: getIntEnv('BEDROCK_MAX_ATTEMPTS', 3),
-  bedrockConcurrency: getIntEnv('BEDROCK_CONCURRENCY', 5),
-  presignedUrlExpirationSeconds: getIntEnv('PRESIGNED_URL_EXPIRATION_SECONDS', 300),
-} as const;
+export interface Config {
+  region: string;
+  bedrockModelDefault: string;
+  certificationsTable: string;
+  examsTable: string;
+  usersTable: string;
+  cognitoUserPoolClientId: string;
+  generatorQueueUrl: string;
+  artifactsBucket: string;
+  bedrockMaxAttempts: number;
+  bedrockConcurrency: number;
+  presignedUrlExpirationSeconds: number;
+}
+
+// Env vars are resolved lazily so a function only fails on the variables it
+// actually reads. This lets the Cognito trigger functions run without the
+// API-only User Pool client id, avoiding a circular template dependency.
+export const config: Config = {
+  get region() {
+    return process.env.AWS_REGION || 'us-east-1';
+  },
+  get bedrockModelDefault() {
+    return process.env.BEDROCK_MODEL_DEFAULT || 'amazon.nova-lite-v1:0';
+  },
+  get certificationsTable() {
+    return requireEnv('DYNAMODB_CERTIFICATIONS_TABLE');
+  },
+  get examsTable() {
+    return requireEnv('DYNAMODB_EXAMS_TABLE');
+  },
+  get usersTable() {
+    return requireEnv('DYNAMODB_USERS_TABLE');
+  },
+  get cognitoUserPoolClientId() {
+    return requireEnv('COGNITO_USER_POOL_CLIENT_ID');
+  },
+  get generatorQueueUrl() {
+    return requireEnv('SQS_GENERATOR_QUEUE_URL');
+  },
+  get artifactsBucket() {
+    return requireEnv('S3_ARTIFACTS_BUCKET');
+  },
+  get bedrockMaxAttempts() {
+    return getIntEnv('BEDROCK_MAX_ATTEMPTS', 3);
+  },
+  get bedrockConcurrency() {
+    return getIntEnv('BEDROCK_CONCURRENCY', 5);
+  },
+  get presignedUrlExpirationSeconds() {
+    return getIntEnv('PRESIGNED_URL_EXPIRATION_SECONDS', 300);
+  },
+};
