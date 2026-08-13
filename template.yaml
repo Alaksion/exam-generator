@@ -35,6 +35,32 @@ Parameters:
     Type: String
     Default: http://localhost:5173
     Description: Comma-separated list of origins allowed to call the public API (CORS).
+  GoogleClientId:
+    Type: String
+    Default: ''
+    Description: Google OAuth client ID for federated sign-in. Leave empty to disable the Google IdP.
+  GoogleClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Google OAuth client secret for federated sign-in. Leave empty to disable the Google IdP.
+  AppleServicesId:
+    Type: String
+    Default: ''
+    Description: Apple Services ID for Sign in with Apple. Leave empty to disable the Apple IdP.
+  AppleTeamId:
+    Type: String
+    Default: ''
+    Description: Apple team ID that owns the Sign in with Apple Services ID.
+  AppleKeyId:
+    Type: String
+    Default: ''
+    Description: Key ID of the private key used to sign Sign in with Apple client assertions.
+  ApplePrivateKeySecretArn:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: ARN of the Secrets Manager secret holding the Sign in with Apple private key (.p8).
 
 Globals:
   Function:
@@ -53,7 +79,7 @@ Globals:
         BEDROCK_MODEL_DEFAULT: !Ref BedrockModelDefault
         DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
-DYNAMODB_USERS_TABLE: !Ref UsersTable
+        DYNAMODB_USERS_TABLE: !Ref UsersTable
         COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
@@ -62,6 +88,16 @@ DYNAMODB_USERS_TABLE: !Ref UsersTable
     Tags:
       Project: exam-generator
       Environment: !Ref Environment
+
+Conditions:
+  GoogleIdpEnabled: !And
+    - !Not [!Equals [!Ref GoogleClientId, '']]
+    - !Not [!Equals [!Ref GoogleClientSecret, '']]
+  AppleIdpEnabled: !And
+    - !Not [!Equals [!Ref AppleServicesId, '']]
+    - !Not [!Equals [!Ref AppleTeamId, '']]
+    - !Not [!Equals [!Ref AppleKeyId, '']]
+    - !Not [!Equals [!Ref ApplePrivateKeySecretArn, '']]
 
 Resources:
   # ---------------------------------------------------------------------------
@@ -128,6 +164,8 @@ Resources:
         - ALLOW_REFRESH_TOKEN_AUTH
       SupportedIdentityProviders:
         - COGNITO
+        - !If [GoogleIdpEnabled, !Ref GoogleIdentityProvider, !Ref 'AWS::NoValue']
+        - !If [AppleIdpEnabled, !Ref AppleIdentityProvider, !Ref 'AWS::NoValue']
       CallbackURLs:
         - !Ref AuthCallbackUrl
       LogoutURLs:
@@ -146,6 +184,36 @@ Resources:
     Properties:
       Domain: !Sub ${AWS::StackName}-auth
       UserPoolId: !Ref UserPool
+
+  GoogleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: GoogleIdpEnabled
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: 'email profile openid'
+      AttributeMapping:
+        email: email
+
+  AppleIdentityProvider:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: AppleIdpEnabled
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: SignInWithApple
+      ProviderType: SignInWithApple
+      ProviderDetails:
+        client_id: !Ref AppleServicesId
+        team_id: !Ref AppleTeamId
+        key_id: !Ref AppleKeyId
+        private_key: !Ref ApplePrivateKeySecretArn
+        authorize_scopes: 'email name'
+      AttributeMapping:
+        email: email
 
   # PublicApiWafAcl:
   #   Type: AWS::WAFv2::WebACL

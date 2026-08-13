@@ -46,7 +46,7 @@ Core fields:
   - `domains` — list of weighted knowledge domains: `[{ id, name, weight, topics: [{ id, name, context }] }]`. Each `weight` is an integer percent; weights must sum to `100`. The `id`s are system-generated. Topics are scoped to their domain; a topic's `context` is required prose that scopes generated questions (see ADR-0003).
   - The `modelId` and `promptTemplate` config fields are removed: the model is an application-level concern (global default) and prompt engineering is centralized in a single generator prompt.
 
-Lifecycle: created and updated through a public, API-key-protected endpoint. `provider` and `code` are immutable after creation. Deletion is not supported; set `isActive` to `false` instead.
+Lifecycle: created and updated through an admin-only, JWT-protected endpoint. `provider` and `code` are immutable after creation. Deletion is not supported; set `isActive` to `false` instead.
 
 ### Exam
 
