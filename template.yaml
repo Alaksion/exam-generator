@@ -80,7 +80,6 @@ Globals:
         DYNAMODB_CERTIFICATIONS_TABLE: !Ref CertificationsTable
         DYNAMODB_EXAMS_TABLE: !Ref ExamsTable
         DYNAMODB_USERS_TABLE: !Ref UsersTable
-        COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         SQS_GENERATOR_QUEUE_URL: !Ref GeneratorQueue
         S3_ARTIFACTS_BUCKET: !Ref ExamArtifactsBucket
         PRESIGNED_URL_EXPIRATION_SECONDS: '300'
@@ -272,6 +271,9 @@ Resources:
     Properties:
       CodeUri: ./
       Description: HTTP API handler for certifications and exams.
+      Environment:
+        Variables:
+          COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
       Events:
         HealthEvent:
           Type: Api
