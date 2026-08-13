@@ -33,7 +33,7 @@ export const handler = async (event: TriggerEvent): Promise<TriggerEvent> => {
 async function enforceEmailLock(event: PreSignUpTriggerEvent): Promise<PreSignUpTriggerEvent> {
   const email = emailFromRequest(event);
   if (!email) {
-    return finalizePreSignUp(event);
+    return applyFederatedAutoConfirm(event);
   }
 
   const existing = await getUserByEmail(email);
@@ -41,10 +41,10 @@ async function enforceEmailLock(event: PreSignUpTriggerEvent): Promise<PreSignUp
     throw new EmailLockedError();
   }
 
-  return finalizePreSignUp(event);
+  return applyFederatedAutoConfirm(event);
 }
 
-function finalizePreSignUp(event: PreSignUpTriggerEvent): PreSignUpTriggerEvent {
+function applyFederatedAutoConfirm(event: PreSignUpTriggerEvent): PreSignUpTriggerEvent {
   if (event.triggerSource === 'PreSignUp_ExternalProvider') {
     event.response.autoConfirmUser = true;
     event.response.autoVerifyEmail = true;

@@ -73,7 +73,9 @@ Globals:
       Environment: !Ref Environment
 
 Conditions:
-  GoogleIdpEnabled: !Not [!Equals [!Ref GoogleClientId, '']]
+  GoogleIdpEnabled: !And
+    - !Not [!Equals [!Ref GoogleClientId, '']]
+    - !Not [!Equals [!Ref GoogleClientSecret, '']]
 
 Resources:
   # ---------------------------------------------------------------------------
