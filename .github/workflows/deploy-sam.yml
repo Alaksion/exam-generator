@@ -1,0 +1,102 @@
+name: Deploy SAM stack
+
+# Manual dispatch: pick the target environment and GitHub routes the deploy to
+# that environment's AWS account through its scoped secrets and protection rules.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        default: dev
+        options:
+          - dev
+          - staging
+          - prod
+
+permissions:
+  id-token: write # OIDC federation into the target AWS account
+  contents: read
+
+jobs:
+  checks:
+    name: Lint & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: checks
+    # The GitHub Environment name resolves to the selected environment, so each
+    # env's secrets (AWS_ROLE_TO_ASSUME, AWS_REGION, domains, IdP creds, ...)
+    # and any required-reviewer protection rules apply to its own deploys.
+    # Configure a required reviewer on `prod` to gate production releases.
+    environment:
+      name: ${{ inputs.environment }}
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate template
+        run: npm run build
+
+      - name: Deploy stack
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          AUTH_CALLBACK_URL: ${{ secrets.AUTH_CALLBACK_URL }}
+          AUTH_LOGOUT_URL: ${{ secrets.AUTH_LOGOUT_URL }}
+          SIGNUP_MODE: ${{ secrets.SIGNUP_MODE || 'open' }}
+          BETA_ALLOWLIST: ${{ secrets.BETA_ALLOWLIST }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          APPLE_SERVICES_ID: ${{ secrets.APPLE_SERVICES_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY_SECRET_ARN: ${{ secrets.APPLE_PRIVATE_KEY_SECRET_ARN }}
+        run: |
+          sam deploy \
+            --stack-name "exam-generator-${ENVIRONMENT}" \
+            --s3-prefix "exam-generator-${ENVIRONMENT}" \
+            --resolve-s3 \
+            --region "${AWS_REGION}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
+            --parameter-overrides \
+              "Environment=\"${ENVIRONMENT}\" \
+               AllowedOrigins=\"${ALLOWED_ORIGINS}\" \
+               AuthCallbackUrl=\"${AUTH_CALLBACK_URL}\" \
+               AuthLogoutUrl=\"${AUTH_LOGOUT_URL}\" \
+               SignupMode=\"${SIGNUP_MODE}\" \
+               BetaAllowlist=\"${BETA_ALLOWLIST}\" \
+               GoogleClientId=\"${GOOGLE_CLIENT_ID}\" \
+               GoogleClientSecret=\"${GOOGLE_CLIENT_SECRET}\" \
+               AppleServicesId=\"${APPLE_SERVICES_ID}\" \
+               AppleTeamId=\"${APPLE_TEAM_ID}\" \
+               AppleKeyId=\"${APPLE_KEY_ID}\" \
+               ApplePrivateKeySecretArn=\"${APPLE_PRIVATE_KEY_SECRET_ARN}\""
