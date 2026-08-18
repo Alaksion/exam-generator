@@ -1,9 +1,28 @@
+# Example SAM deployment config for the default (dev) environment.
+# Copy to samconfig.toml and adjust for your account/region.
+#
+# Environment model:
+#   * Each environment is its own CloudFormation stack AND its own AWS account.
+#   * The environment is encoded in the stack NAME (exam-generator-<env>).
+#     Because every resource is prefixed with ${AWS::StackName}, a distinct
+#     stack name alone isolates datastores, the queue, the bucket, the Cognito
+#     pool, and the API Gateway address across dev/staging/prod.
+#   * Deploy with: sam deploy                (dev, from samconfig.toml)
+#                  sam deploy --config-env staging
+#                  sam deploy --config-env prod
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "exam-generator"
-region = "us-east-1"
+stack_name = "exam-generator-dev"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
-s3_prefix = "exam-generator"
+s3_prefix = "exam-generator-dev"
 image_repositories = []
+resolve_s3 = true
+# Environment="dev" names the API Gateway stage and appears in the public URL
+# path (/dev/...). The remaining values are dev defaults; override as needed.
+parameter_overrides = "Environment=\"dev\" BedrockModelDefault=\"amazon.nova-lite-v1:0\" ApiThrottleRateLimit=\"50\" ApiThrottleBurstLimit=\"100\" WafRateLimit=\"3000\" AllowedOrigins=\"http://localhost:5173\" SignupMode=\"open\" BetaAllowlist=\"\""
+disable_rollback = false
+
+[default.global.parameters]
+region = "us-east-1"

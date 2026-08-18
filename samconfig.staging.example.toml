@@ -1,0 +1,23 @@
+# Example SAM deployment config for the STAGING environment.
+# Copy to samconfig.staging.toml and fill in the staging domain/values.
+#
+# Deploy with: sam deploy --config-env staging
+#
+# Staging runs in its OWN AWS account and its OWN stack, isolated from dev and
+# prod. All VALUES below must point at the STAGING domain — never dev or prod.
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "exam-generator-staging"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+s3_prefix = "exam-generator-staging"
+image_repositories = []
+resolve_s3 = true
+# Every URL here must be the STAGING origin. Update your-domain.example to the
+# real staging domain. SignupMode="invite" keeps the closed beta gated here too.
+parameter_overrides = "Environment=\"staging\" BedrockModelDefault=\"amazon.nova-lite-v1:0\" ApiThrottleRateLimit=\"50\" ApiThrottleBurstLimit=\"100\" WafRateLimit=\"3000\" AllowedOrigins=\"https://staging.example.com\" AuthCallbackUrl=\"https://staging.example.com/callback\" AuthLogoutUrl=\"https://staging.example.com\" SignupMode=\"invite\" BetaAllowlist=\"\""
+disable_rollback = false
+
+[default.global.parameters]
+region = "us-east-1"

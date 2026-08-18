@@ -1,0 +1,26 @@
+# Example SAM deployment config for the PRODUCTION environment.
+# Copy to samconfig.prod.toml and fill in the production domain/values.
+#
+# Deploy with: sam deploy --config-env prod
+#
+# Production MUST run in its OWN AWS account and its OWN stack. All VALUES
+# below must point at the PRODUCTION domain/credentials — a mixed value is how
+# environments get crossed. The distinct stack name (exam-generator-prod)
+# guarantees prod never shares datastores or the API Gateway address with
+# staging/dev.
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "exam-generator-prod"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"
+s3_prefix = "exam-generator-prod"
+image_repositories = []
+resolve_s3 = true
+# Every URL here must be the PRODUCTION origin. Update your-domain.example to
+# the real production domain. SignupMode="invite" keeps the closed beta gated.
+parameter_overrides = "Environment=\"prod\" BedrockModelDefault=\"amazon.nova-lite-v1:0\" ApiThrottleRateLimit=\"50\" ApiThrottleBurstLimit=\"100\" WafRateLimit=\"3000\" AllowedOrigins=\"https://app.example.com\" AuthCallbackUrl=\"https://app.example.com/callback\" AuthLogoutUrl=\"https://app.example.com\" SignupMode=\"invite\" BetaAllowlist=\"\""
+disable_rollback = false
+
+[default.global.parameters]
+region = "us-east-1"

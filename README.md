@@ -57,27 +57,48 @@ make install
 
 ### 2. Configure deployment settings
 
-Copy the example SAM config and adjust values for your account/region:
+Copy the example config and adjust the values for each environment:
 
 ```bash
-cp samconfig.example.toml samconfig.toml
+cp samconfig.example.toml           samconfig.toml            # dev
+cp samconfig.staging.example.toml   samconfig.staging.toml    # staging
+cp samconfig.prod.example.toml      samconfig.prod.toml       # production
 ```
 
-Deploy with SAM; the stack prompts for any required parameters (auth callback
-URLs, federated IdP credentials, etc.):
+Deploy with SAM, targeting the environment with `--config-env`:
 
 ```bash
-make deploy
+sam deploy                 # dev
+sam deploy --config-env staging
+sam deploy --config-env prod
 ```
 
-For CI/CD, pass parameters via environment/parameter overrides instead of
-committing them:
+#### Environment isolation
+
+Each environment is **its own CloudFormation stack and its own AWS account**.
+The environment is encoded in the stack name — `exam-generator-dev`,
+`exam-generator-staging`, `exam-generator-prod` — and every resource in
+`template.yaml` is prefixed with `${AWS::StackName}`. A distinct stack name
+therefore isolates, per environment:
+
+- DynamoDB tables, the SQS queue, and the S3 artifacts bucket (datastores)
+- The Cognito user pool and its Hosted UI domain
+- The API Gateway stage and public URL (`/dev/`, `/staging/`, `/prod/`)
+
+The `Environment` parameter (the stage name) must match the stack, and the
+`AuthCallbackUrl` / `AuthLogoutUrl` / `AllowedOrigins` overrides must point at
+that environment's own domain — mixing these across files is how environments
+get crossed. `samconfig.*.example.toml` includes placeholders for exactly this
+reason.
+
+Per-environment secrets (federated IdP credentials, allowlists) are passed via
+parameter overrides for CI/CD rather than committed:
 
 ```bash
-sam deploy --parameter-overrides \
-  AuthCallbackUrl=$AUTH_CALLBACK_URL \
+sam deploy --config-env prod --parameter-overrides \
   GoogleClientId=$GOOGLE_CLIENT_ID \
-  GoogleClientSecret=$GOOGLE_CLIENT_SECRET
+  GoogleClientSecret=$GOOGLE_CLIENT_SECRET \
+  BetaAllowlist=$PROD_BETA_ALLOWLIST
 ```
 
 ### 3. Build the project
@@ -182,7 +203,10 @@ idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/ro
 ```
 .
 ├── template.yaml              # SAM infrastructure template
-├── samconfig.example.toml     # Example SAM deployment config (do not commit secrets)
+├── samconfig.example.toml     # Example SAM config — dev (do not commit secrets)
+├── samconfig.staging.example.toml  # Example SAM config — staging
+├── samconfig.prod.example.toml     # Example SAM config — production
+├── samconfig.toml             # Local .gitignored per-env configs
 ├── tsconfig.json              # TypeScript configuration
 ├── package.json               # Node.js dependencies and scripts
 ├── Makefile                   # Common build/run/deploy commands
