@@ -280,7 +280,7 @@ Resources:
         Loader:
           - .ts=ts
     Properties:
-      CodeUri: ./
+      CodeUri: ../
       Description: HTTP API handler for certifications and exams.
       Environment:
         Variables:
@@ -354,7 +354,7 @@ Resources:
         Loader:
           - .ts=ts
     Properties:
-      CodeUri: ./
+      CodeUri: ../
       Description: Enforces the one-email-one-account lock and invite-only sign-ups, and provisions user rows.
       Environment:
         Variables:
@@ -388,7 +388,7 @@ Resources:
         Loader:
           - .ts=ts
     Properties:
-      CodeUri: ./
+      CodeUri: ../
       Description: SQS worker that generates exam questions, renders the PDF, and uploads artifacts.
 # Lambda timeout: must stay below the queue's VisibilityTimeout so an in-flight exam is
 # not redelivered while the worker still runs (redelivery + maxReceiveCount would DLQ it).

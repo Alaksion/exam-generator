@@ -78,7 +78,7 @@ sam deploy --config-env prod
 Each environment is **its own CloudFormation stack and its own AWS account**.
 The environment is encoded in the stack name — `exam-generator-dev`,
 `exam-generator-staging`, `exam-generator-prod` — and every resource in
-`template.yaml` is prefixed with `${AWS::StackName}`. A distinct stack name
+`infra/template.yaml` is prefixed with `${AWS::StackName}`. A distinct stack name
 therefore isolates, per environment:
 
 - DynamoDB tables, the SQS queue, and the S3 artifacts bucket (datastores)
@@ -135,9 +135,35 @@ Unset optional secrets pass an empty value, which the template already treats as
 "IdP disabled." Use the environment's **required reviewers** protection rule on
 `prod` (and optionally `staging`) to gate releases.
 
-Add the workflow's OIDC provider (e.g. `token.actions.githubusercontent.com`) to
-the AWS IAM role trusted policy for each account; scope its `sub` to the repo
-and environment.
+#### GitHub Actions bootstrap
+
+To let the dispatched workflow assume a role in each account, run the bootstrap
+stack **once per account** from that account's own profile:
+
+```bash
+scripts/bootstrap-github-actions.sh dev    # or staging / prod
+```
+
+`infra/bootstrap.yaml` creates the GitHub OIDC provider and a
+`github-actions-deploy` IAM role whose trust policy restricts `sub` to
+`repo:<org>/<repo>:environment:<env>`, so the role can only be assumed by this
+repo on its own environment. The script prints the exact `gh secret set` lines
+(with the role ARN) to store in the matching GitHub environment.
+
+By hand:
+
+```bash
+aws cloudformation deploy \
+  --template-file infra/bootstrap.yaml \
+  --stack-name exam-generator-github-bootstrap \
+  --parameter-overrides Environment=dev \
+  --capabilities CAPABILITY_IAM \
+  --profile dev
+```
+
+The role attaches `AdministratorAccess` (account-scoped, OIDC-locked); swap it
+for a least-privilege policy after launch if desired. Override `OidcThumbprint`
+if GitHub rotates the OIDC cert and a deploy is rejected.
 
 ### 3. Build the project
 
@@ -240,7 +266,9 @@ idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/ro
 
 ```
 .
-├── template.yaml              # SAM infrastructure template
+├── infra/
+│   ├── template.yaml          # SAM application stack
+│   └── bootstrap.yaml         # Per-account GitHub Actions OIDC + deploy role
 ├── .github/
 │   └── workflows/
 │       └── deploy-sam.yml     # Dispatched SAM deploy (dev/staging/prod)

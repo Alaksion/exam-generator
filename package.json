@@ -8,16 +8,16 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "PATH=$(pwd)/node_modules/.bin:$PATH sam build",
-    "build:watch": "PATH=$(pwd)/node_modules/.bin:$PATH sam build --beta-features",
-    "start": "PATH=$(pwd)/node_modules/.bin:$PATH sam local start-api --warm-containers EAGER",
-    "start:generate": "PATH=$(pwd)/node_modules/.bin:$PATH sam local generate-event sqs receive-message | PATH=$(pwd)/node_modules/.bin:$PATH sam local invoke GeneratorFunction",
+    "build": "PATH=$(pwd)/node_modules/.bin:$PATH sam build -t infra/template.yaml",
+    "build:watch": "PATH=$(pwd)/node_modules/.bin:$PATH sam build -t infra/template.yaml --beta-features",
+    "start": "PATH=$(pwd)/node_modules/.bin:$PATH sam local start-api -t infra/template.yaml --warm-containers EAGER",
+    "start:generate": "PATH=$(pwd)/node_modules/.bin:$PATH sam local generate-event sqs receive-message | PATH=$(pwd)/node_modules/.bin:$PATH sam local invoke -t infra/template.yaml GeneratorFunction",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit && eslint src",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
-    "deploy": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --guided",
-    "deploy:ci": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --no-confirm-changeset --no-fail-on-empty-changeset",
+    "deploy": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --guided -t infra/template.yaml",
+    "deploy:ci": "PATH=$(pwd)/node_modules/.bin:$PATH sam deploy --no-confirm-changeset --no-fail-on-empty-changeset -t infra/template.yaml",
     "seed:certifications": "PATH=$(pwd)/node_modules/.bin:$PATH esbuild scripts/seed-certification.ts --bundle --platform=node --format=cjs --outfile=.build/seed-certification.cjs && PATH=$(pwd)/node_modules/.bin:$PATH node .build/seed-certification.cjs",
     "promote:admin": "PATH=$(pwd)/node_modules/.bin:$PATH esbuild scripts/promote-admin.ts --bundle --platform=node --format=cjs --outfile=.build/promote-admin.cjs && PATH=$(pwd)/node_modules/.bin:$PATH node .build/promote-admin.cjs"
   },
