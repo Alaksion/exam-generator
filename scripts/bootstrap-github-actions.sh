@@ -3,7 +3,7 @@
 #
 #   usage: scripts/bootstrap-github-actions.sh <dev|staging|prod> [aws-profile] [region]
 #
-# Deploys bootstrap/template.yaml (OIDC provider + deploy role) to the given
+# Deploys infra/bootstrap.yaml (OIDC provider + deploy role) to the given
 # account and prints the exact secrets to wire into the matching GitHub
 # environment. Run once per environment account, from the account's own profile.
 set -euo pipefail
@@ -20,7 +20,7 @@ esac
 
 echo "==> Deploying bootstrap stack for '${ENV}' (profile '${PROFILE}', region '${REGION}')"
 aws --profile "$PROFILE" --region "$REGION" cloudformation deploy \
-  --template-file bootstrap/template.yaml \
+  --template-file infra/bootstrap.yaml \
   --stack-name "$STACK_NAME" \
   --parameter-overrides "Environment=${ENV}" \
   --capabilities CAPABILITY_IAM \

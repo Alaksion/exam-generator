@@ -78,7 +78,7 @@ sam deploy --config-env prod
 Each environment is **its own CloudFormation stack and its own AWS account**.
 The environment is encoded in the stack name — `exam-generator-dev`,
 `exam-generator-staging`, `exam-generator-prod` — and every resource in
-`template.yaml` is prefixed with `${AWS::StackName}`. A distinct stack name
+`infra/template.yaml` is prefixed with `${AWS::StackName}`. A distinct stack name
 therefore isolates, per environment:
 
 - DynamoDB tables, the SQS queue, and the S3 artifacts bucket (datastores)
@@ -144,7 +144,7 @@ stack **once per account** from that account's own profile:
 scripts/bootstrap-github-actions.sh dev    # or staging / prod
 ```
 
-`bootstrap/template.yaml` creates the GitHub OIDC provider and a
+`infra/bootstrap.yaml` creates the GitHub OIDC provider and a
 `github-actions-deploy` IAM role whose trust policy restricts `sub` to
 `repo:<org>/<repo>:environment:<env>`, so the role can only be assumed by this
 repo on its own environment. The script prints the exact `gh secret set` lines
@@ -154,7 +154,7 @@ By hand:
 
 ```bash
 aws cloudformation deploy \
-  --template-file bootstrap/template.yaml \
+  --template-file infra/bootstrap.yaml \
   --stack-name exam-generator-github-bootstrap \
   --parameter-overrides Environment=dev \
   --capabilities CAPABILITY_IAM \
@@ -266,11 +266,12 @@ idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/ro
 
 ```
 .
-├── template.yaml              # SAM infrastructure template
+├── infra/
+│   ├── template.yaml          # SAM application stack
+│   └── bootstrap.yaml         # Per-account GitHub Actions OIDC + deploy role
 ├── .github/
 │   └── workflows/
 │       └── deploy-sam.yml     # Dispatched SAM deploy (dev/staging/prod)
-├── bootstrap/template.yaml    # Per-account GitHub Actions OIDC + deploy role
 ├── samconfig.example.toml     # Example SAM config — dev (do not commit secrets)
 ├── samconfig.staging.example.toml  # Example SAM config — staging
 ├── samconfig.prod.example.toml     # Example SAM config — production

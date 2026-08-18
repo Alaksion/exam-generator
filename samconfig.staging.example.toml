@@ -8,6 +8,7 @@
 version = 0.1
 
 [default.deploy.parameters]
+template = "infra/template.yaml"
 stack_name = "exam-generator-staging"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM CAPABILITY_AUTO_EXPAND"

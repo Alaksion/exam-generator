@@ -7,13 +7,13 @@ install:
 	npm install
 
 build:
-	sam build
+	sam build -t infra/template.yaml
 
 start: build
-	sam local start-api --warm-containers EAGER
+	sam local start-api -t infra/template.yaml --warm-containers EAGER
 
 start-generate: build
-	sam local generate-event sqs receive-message | sam local invoke GeneratorFunction
+	sam local generate-event sqs receive-message | sam local invoke -t infra/template.yaml GeneratorFunction
 
 test:
 	npm test
@@ -25,10 +25,10 @@ format:
 	npm run format
 
 deploy:
-	sam deploy --guided
+	sam deploy --guided -t infra/template.yaml
 
 deploy-ci:
-	sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+	sam deploy -t infra/template.yaml --no-confirm-changeset --no-fail-on-empty-changeset
 
 clean:
 	rm -rf .aws-sam dist coverage node_modules
