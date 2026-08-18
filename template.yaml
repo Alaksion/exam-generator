@@ -15,6 +15,17 @@ Parameters:
     Type: String
     Default: http://localhost:5173
     Description: Logout URL registered on the user pool app client.
+  SignupMode:
+    Type: String
+    Default: open
+    AllowedValues:
+      - open
+      - invite
+    Description: Sign-up policy. "invite" limits new sign-ups to emails and domains on the BetaAllowlist.
+  BetaAllowlist:
+    Type: String
+    Default: ''
+    Description: Comma-separated emails and domains allowed to sign up while SignupMode is "invite".
   BedrockModelDefault:
     Type: String
     Default: amazon.nova-lite-v1:0
@@ -344,7 +355,11 @@ Resources:
           - .ts=ts
     Properties:
       CodeUri: ./
-      Description: Enforces the one-email-one-account lock and provisions user rows.
+      Description: Enforces the one-email-one-account lock and invite-only sign-ups, and provisions user rows.
+      Environment:
+        Variables:
+          SIGNUP_MODE: !Ref SignupMode
+          BETA_ALLOWLIST: !Ref BetaAllowlist
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref UsersTable

@@ -3,6 +3,7 @@ import {
   PreSignUpTriggerEvent,
 } from 'aws-lambda';
 import { createUser, getUserByEmail, normalizeEmail } from '../shared/repositories/users.js';
+import { config } from '../shared/config.js';
 
 type TriggerEvent = PreSignUpTriggerEvent | PostConfirmationConfirmSignUpTriggerEvent;
 
@@ -13,8 +14,28 @@ export class EmailLockedError extends Error {
   }
 }
 
+export class SignupNotAllowedError extends Error {
+  constructor() {
+    super('Sign-ups are currently invite-only.');
+    this.name = 'SignupNotAllowedError';
+  }
+}
+
 function emailFromRequest(event: TriggerEvent): string | undefined {
   return event.request.userAttributes?.email;
+}
+
+function isSignupAllowed(email: string | undefined): boolean {
+  if (config.signupMode !== 'invite') {
+    return true;
+  }
+  if (!email) {
+    return false;
+  }
+  const normalized = normalizeEmail(email);
+  const domain = normalized.split('@')[1];
+  const entries = config.betaAllowlist;
+  return entries.has(normalized) || (domain !== undefined && entries.has(domain));
 }
 
 export const handler = async (event: TriggerEvent): Promise<TriggerEvent> => {
@@ -32,6 +53,11 @@ export const handler = async (event: TriggerEvent): Promise<TriggerEvent> => {
 
 async function enforceEmailLock(event: PreSignUpTriggerEvent): Promise<PreSignUpTriggerEvent> {
   const email = emailFromRequest(event);
+
+  if (!isSignupAllowed(email)) {
+    throw new SignupNotAllowedError();
+  }
+
   if (!email) {
     return applyFederatedAutoConfirm(event);
   }

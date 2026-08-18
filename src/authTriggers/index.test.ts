@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PreSignUpTriggerEvent, PostConfirmationConfirmSignUpTriggerEvent } from 'aws-lambda';
-import { handler, EmailLockedError } from './index.js';
+import { handler, EmailLockedError, SignupNotAllowedError } from './index.js';
 import * as usersRepo from '../shared/repositories/users.js';
 
 vi.mock('../shared/repositories/users.js', async (importOriginal) => {
@@ -18,6 +18,13 @@ const mockedCreateUser = vi.mocked(usersRepo.createUser);
 beforeEach(() => {
   vi.clearAllMocks();
   mockedCreateUser.mockResolvedValue('created');
+  process.env.SIGNUP_MODE = 'open';
+  process.env.BETA_ALLOWLIST = '';
+});
+
+afterEach(() => {
+  delete process.env.SIGNUP_MODE;
+  delete process.env.BETA_ALLOWLIST;
 });
 
 const shared = {
@@ -171,6 +178,141 @@ describe('PreSignUp email lock', () => {
 
     expect(result).toBeDefined();
     expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('PreSignUp invite-only allowlist', () => {
+  it('allows an allowlisted email in invite mode', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp());
+
+    expect(result.triggerSource).toBe('PreSignUp_SignUp');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('allows an email matching an allowlisted domain in invite mode', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp());
+
+    expect(result.triggerSource).toBe('PreSignUp_SignUp');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('matches the allowlist case-insensitively', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'Alice@Example.com, Example.COM';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp());
+
+    expect(result.triggerSource).toBe('PreSignUp_SignUp');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('blocks a native sign-up for an email not on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    await expect(handler(preSignUp())).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('blocks an admin-created user whose email is not on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const event = preSignUp({ source: 'PreSignUp_AdminCreateUser' });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('allows an admin-created user on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp({ source: 'PreSignUp_AdminCreateUser' }));
+
+    expect(result.triggerSource).toBe('PreSignUp_AdminCreateUser');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('blocks a federated sign-up for an email not on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const event = preSignUp({ source: 'PreSignUp_ExternalProvider' });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('blocks an email-less sign-up in invite mode', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const native = preSignUp({ userAttributes: {} });
+    const federated = preSignUp({ source: 'PreSignUp_ExternalProvider', userAttributes: {} });
+
+    await expect(handler(native)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    await expect(handler(federated)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('blocks an allowlisted email that is already claimed (email lock still applies)', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue({
+      userId: 'existing-sub',
+      email: 'alice@example.com',
+      role: 'customer',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await expect(handler(preSignUp())).rejects.toBeInstanceOf(EmailLockedError);
+  });
+
+  it('allows an allowlisted federated sign-up and auto-confirms it', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = (await handler(preSignUp({ source: 'PreSignUp_ExternalProvider' }))) as PreSignUpTriggerEvent;
+
+    expect(result.response.autoConfirmUser).toBe(true);
+    expect(result.response.autoVerifyEmail).toBe(true);
+  });
+
+  it('allows all sign-ups when the mode is open, regardless of the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'open';
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp());
+
+    expect(result.triggerSource).toBe('PreSignUp_SignUp');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
+  it('defaults to open mode when SIGNUP_MODE is unset', async () => {
+    delete process.env.SIGNUP_MODE;
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp());
+
+    expect(result.triggerSource).toBe('PreSignUp_SignUp');
   });
 });
 
