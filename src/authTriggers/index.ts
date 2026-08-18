@@ -13,8 +13,38 @@ export class EmailLockedError extends Error {
   }
 }
 
+export class SignupNotAllowedError extends Error {
+  constructor() {
+    super('Sign-ups are currently invite-only.');
+    this.name = 'SignupNotAllowedError';
+  }
+}
+
 function emailFromRequest(event: TriggerEvent): string | undefined {
   return event.request.userAttributes?.email;
+}
+
+function isInviteOnly(): boolean {
+  return (process.env.SIGNUP_MODE || 'open') === 'invite';
+}
+
+function allowlist(): Set<string> {
+  return new Set(
+    (process.env.BETA_ALLOWLIST || '')
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry.length > 0),
+  );
+}
+
+function isAllowed(email: string): boolean {
+  if (!isInviteOnly()) {
+    return true;
+  }
+  const normalized = normalizeEmail(email);
+  const domain = normalized.split('@')[1];
+  const entries = allowlist();
+  return entries.has(normalized) || (domain !== undefined && entries.has(domain));
 }
 
 export const handler = async (event: TriggerEvent): Promise<TriggerEvent> => {
@@ -34,6 +64,10 @@ async function enforceEmailLock(event: PreSignUpTriggerEvent): Promise<PreSignUp
   const email = emailFromRequest(event);
   if (!email) {
     return applyFederatedAutoConfirm(event);
+  }
+
+  if (!isAllowed(email)) {
+    throw new SignupNotAllowedError();
   }
 
   const existing = await getUserByEmail(email);
