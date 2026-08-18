@@ -18,6 +18,8 @@ export function getIntEnv(name: string, defaultValue: number): number {
   return parsed;
 }
 
+export type SignupMode = 'open' | 'invite';
+
 export interface Config {
   region: string;
   bedrockModelDefault: string;
@@ -30,6 +32,8 @@ export interface Config {
   bedrockMaxAttempts: number;
   bedrockConcurrency: number;
   presignedUrlExpirationSeconds: number;
+  signupMode: SignupMode;
+  betaAllowlist: Set<string>;
 }
 
 // Env vars are resolved lazily so a function only fails on the variables it
@@ -68,5 +72,16 @@ export const config: Config = {
   },
   get presignedUrlExpirationSeconds() {
     return getIntEnv('PRESIGNED_URL_EXPIRATION_SECONDS', 300);
+  },
+  get signupMode() {
+    return process.env.SIGNUP_MODE === 'invite' ? 'invite' : 'open';
+  },
+  get betaAllowlist() {
+    return new Set(
+      (process.env.BETA_ALLOWLIST || '')
+        .split(',')
+        .map((entry) => entry.trim().toLowerCase())
+        .filter((entry) => entry.length > 0),
+    );
   },
 };

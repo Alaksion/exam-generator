@@ -224,6 +224,28 @@ describe('PreSignUp invite-only allowlist', () => {
     expect(mockedGetUserByEmail).not.toHaveBeenCalled();
   });
 
+  it('blocks an admin-created user whose email is not on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'bob@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const event = preSignUp({ source: 'PreSignUp_AdminCreateUser' });
+
+    await expect(handler(event)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('allows an admin-created user on the allowlist', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const result = await handler(preSignUp({ source: 'PreSignUp_AdminCreateUser' }));
+
+    expect(result.triggerSource).toBe('PreSignUp_AdminCreateUser');
+    expect(mockedGetUserByEmail).toHaveBeenCalledWith('alice@example.com');
+  });
+
   it('blocks a federated sign-up for an email not on the allowlist', async () => {
     process.env.SIGNUP_MODE = 'invite';
     process.env.BETA_ALLOWLIST = 'bob@example.com';
@@ -232,6 +254,19 @@ describe('PreSignUp invite-only allowlist', () => {
     const event = preSignUp({ source: 'PreSignUp_ExternalProvider' });
 
     await expect(handler(event)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    expect(mockedGetUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it('blocks an email-less sign-up in invite mode', async () => {
+    process.env.SIGNUP_MODE = 'invite';
+    process.env.BETA_ALLOWLIST = 'alice@example.com';
+    mockedGetUserByEmail.mockResolvedValue(null);
+
+    const native = preSignUp({ userAttributes: {} });
+    const federated = preSignUp({ source: 'PreSignUp_ExternalProvider', userAttributes: {} });
+
+    await expect(handler(native)).rejects.toBeInstanceOf(SignupNotAllowedError);
+    await expect(handler(federated)).rejects.toBeInstanceOf(SignupNotAllowedError);
     expect(mockedGetUserByEmail).not.toHaveBeenCalled();
   });
 

@@ -3,6 +3,7 @@ import {
   PreSignUpTriggerEvent,
 } from 'aws-lambda';
 import { createUser, getUserByEmail, normalizeEmail } from '../shared/repositories/users.js';
+import { config } from '../shared/config.js';
 
 type TriggerEvent = PreSignUpTriggerEvent | PostConfirmationConfirmSignUpTriggerEvent;
 
@@ -24,26 +25,16 @@ function emailFromRequest(event: TriggerEvent): string | undefined {
   return event.request.userAttributes?.email;
 }
 
-function isInviteOnly(): boolean {
-  return (process.env.SIGNUP_MODE || 'open') === 'invite';
-}
-
-function allowlist(): Set<string> {
-  return new Set(
-    (process.env.BETA_ALLOWLIST || '')
-      .split(',')
-      .map((entry) => entry.trim().toLowerCase())
-      .filter((entry) => entry.length > 0),
-  );
-}
-
-function isAllowed(email: string): boolean {
-  if (!isInviteOnly()) {
+function isSignupAllowed(email: string | undefined): boolean {
+  if (config.signupMode !== 'invite') {
     return true;
+  }
+  if (!email) {
+    return false;
   }
   const normalized = normalizeEmail(email);
   const domain = normalized.split('@')[1];
-  const entries = allowlist();
+  const entries = config.betaAllowlist;
   return entries.has(normalized) || (domain !== undefined && entries.has(domain));
 }
 
@@ -62,12 +53,13 @@ export const handler = async (event: TriggerEvent): Promise<TriggerEvent> => {
 
 async function enforceEmailLock(event: PreSignUpTriggerEvent): Promise<PreSignUpTriggerEvent> {
   const email = emailFromRequest(event);
-  if (!email) {
-    return applyFederatedAutoConfirm(event);
+
+  if (!isSignupAllowed(email)) {
+    throw new SignupNotAllowedError();
   }
 
-  if (!isAllowed(email)) {
-    throw new SignupNotAllowedError();
+  if (!email) {
+    return applyFederatedAutoConfirm(event);
   }
 
   const existing = await getUserByEmail(email);
