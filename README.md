@@ -101,6 +101,44 @@ sam deploy --config-env prod --parameter-overrides \
   BetaAllowlist=$PROD_BETA_ALLOWLIST
 ```
 
+#### CI/CD: dispatched deploys
+
+Production deploys run from GitHub Actions, **not** your machine — trigger them
+from the **Actions** tab → **Deploy SAM stack** → **Run workflow**, choosing the
+environment. The stack name and all values come from explicit CLI args, so the
+workflow is the single source of truth for a deploy (no reliance on a committed
+`samconfig.<env>.toml`).
+
+`.github/workflows/deploy-sam.yml`:
+
+1. Runs `lint` + `test` (gate).
+2. Routes the `deploy` job to the GitHub **Environment** matching the selected
+   environment, loads that environment's scoped secrets, and assumes an AWS
+   role via OIDC — the durable separate-account guarantee.
+3. Builds and deploys the stack with `sam deploy --resolve-s3 --parameter-overrides ...`.
+
+**Required secrets per environment** (`dev`, `staging`, `prod`), stored as
+GitHub environment secrets:
+
+| Secret | Notes |
+| --- | --- |
+| `AWS_ROLE_TO_ASSUME` | IAM role ARN in that environment's AWS account (OIDC) |
+| `AWS_REGION` | e.g. `us-east-1` |
+| `ALLOWED_ORIGINS` | the environment's web origin |
+| `AUTH_CALLBACK_URL` / `AUTH_LOGOUT_URL` | the environment's Cognito callback/logout |
+| `SIGNUP_MODE` | `open` / `invite` |
+| `BETA_ALLOWLIST` | comma-separated emails/domains (invite mode) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | leave unset to disable Google |
+| `APPLE_SERVICES_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY_SECRET_ARN` | leave unset to disable Apple |
+
+Unset optional secrets pass an empty value, which the template already treats as
+"IdP disabled." Use the environment's **required reviewers** protection rule on
+`prod` (and optionally `staging`) to gate releases.
+
+Add the workflow's OIDC provider (e.g. `token.actions.githubusercontent.com`) to
+the AWS IAM role trusted policy for each account; scope its `sub` to the repo
+and environment.
+
 ### 3. Build the project
 
 ```bash
@@ -203,6 +241,9 @@ idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/ro
 ```
 .
 ├── template.yaml              # SAM infrastructure template
+├── .github/
+│   └── workflows/
+│       └── deploy-sam.yml     # Dispatched SAM deploy (dev/staging/prod)
 ├── samconfig.example.toml     # Example SAM config — dev (do not commit secrets)
 ├── samconfig.staging.example.toml  # Example SAM config — staging
 ├── samconfig.prod.example.toml     # Example SAM config — production
@@ -291,7 +332,8 @@ authenticated users and role-based administration. Remaining work includes:
 
 1. Improve generator coverage/quality harness as the question library grows.
 2. Add pricing, analytics, and richer failure handling (out of scope for the MVP).
-3. Configure CI/CD (GitHub Actions) to run `lint`, `test`, and `deploy:ci`.
+3. Extend CI/CD (dispatched SAM deploys are wired; add automated post-deploy
+   seeding and promotion as needed).
 
 ## License
 
