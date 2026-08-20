@@ -28,10 +28,9 @@ Parameters:
     Description: Name of the IAM role assumed by GitHub Actions.
   OidcThumbprint:
     Type: String
-    Default: 6938fd4d98bab03faadb97b34396831e3780aea1
+    Default: 1b511abead59c6ce207077c0bf0e0043b1382612
     Description: >-
-      SHA-1 fingerprint of the GitHub Actions OIDC server certificate. Fetch the
-      current value from the GitHub OIDC docs if a deploy is rejected.
+      SHA-1 fingerprint of the GitHub Actions OIDC server certificate.
 
 Resources:
   GithubActionsOidcProvider:
