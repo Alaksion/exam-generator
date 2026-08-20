@@ -54,6 +54,16 @@ jobs:
           cache: npm
       - run: npm ci
 
+      - name: Debug AWS secrets
+        env:
+          ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          echo "ROLE_TO_ASSUME length: ${#ROLE_TO_ASSUME}"
+          echo "ROLE_TO_ASSUME account: ${ROLE_TO_ASSUME#arn:aws:iam::}" | cut -d: -f1
+          echo "ROLE_TO_ASSUME role: ${ROLE_TO_ASSUME##*/}"
+          echo "REGION: ${REGION}"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
