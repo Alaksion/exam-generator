@@ -54,21 +54,11 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Debug AWS secrets
-        env:
-          ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          echo "ROLE_TO_ASSUME length: ${#ROLE_TO_ASSUME}"
-          echo "ROLE_TO_ASSUME account: ${ROLE_TO_ASSUME#arn:aws:iam::}" | cut -d: -f1
-          echo "ROLE_TO_ASSUME role: ${ROLE_TO_ASSUME##*/}"
-          echo "REGION: ${REGION}"
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: 'arn:aws:iam::147942346327:role/github-actions-deploy'
+          aws-region: 'us-east-1'
 
       - name: Validate template
         run: npm run build
