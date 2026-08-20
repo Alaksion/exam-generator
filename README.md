@@ -157,7 +157,7 @@ aws cloudformation deploy \
   --template-file infra/bootstrap.yaml \
   --stack-name exam-generator-github-bootstrap \
   --parameter-overrides Environment=dev \
-  --capabilities CAPABILITY_IAM \
+  --capabilities CAPABILITY_NAMED_IAM \
   --profile dev
 ```
 

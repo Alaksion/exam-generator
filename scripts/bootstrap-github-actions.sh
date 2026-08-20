@@ -23,7 +23,7 @@ aws --profile "$PROFILE" --region "$REGION" cloudformation deploy \
   --template-file infra/bootstrap.yaml \
   --stack-name "$STACK_NAME" \
   --parameter-overrides "Environment=${ENV}" \
-  --capabilities CAPABILITY_IAM \
+  --capabilities CAPABILITY_NAMED_IAM \
   --no-fail-on-empty-changeset
 
 ROLE_ARN=$(aws --profile "$PROFILE" --region "$REGION" cloudformation describe-stacks \
