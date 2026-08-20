@@ -14,14 +14,6 @@ Parameters:
     Description: >-
       The GitHub environment this account serves. Scopes the role's trust policy
       so the role can only be assumed by this repo on this environment.
-  GitHubOrg:
-    Type: String
-    Default: Alaksion
-    Description: GitHub org/owner that runs the deploy workflow.
-  GitHubRepo:
-    Type: String
-    Default: exam-generator
-    Description: GitHub repository that runs the deploy workflow.
   RoleName:
     Type: String
     Default: github-actions-deploy
@@ -67,7 +59,7 @@ Resources:
               # own account, so this still cannot cross accounts.
               StringLike:
                 token.actions.githubusercontent.com:sub:
-                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
+                  - !Sub 'repo:Alaksion@30579274/exam-generator@1314515687:environment:${Environment}'
       # SAM deploys touch CloudFormation, IAM, Lambda, API Gateway, Cognito,
       # DynamoDB, SQS, S3, Bedrock, and Secrets Manager. AdministratorAccess is
       # the pragmatic start for an account-scoped, OIDC-locked role; swap it for
