@@ -62,9 +62,13 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              # GitHub's OIDC subject varies by event (workflow_dispatch may
+              # emit a ref:- or environment:-based sub), so scope to the repo
+              # rather than a fixed suffix. Each environment's role lives in its
+              # own account, so this still cannot cross accounts.
               StringLike:
                 token.actions.githubusercontent.com:sub:
-                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:environment:${Environment}'
+                  - !Sub 'repo:${GitHubOrg}/${GitHubRepo}:*'
       # SAM deploys touch CloudFormation, IAM, Lambda, API Gateway, Cognito,
       # DynamoDB, SQS, S3, Bedrock, and Secrets Manager. AdministratorAccess is
       # the pragmatic start for an account-scoped, OIDC-locked role; swap it for
