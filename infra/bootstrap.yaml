@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Bootstrap one AWS account for GitHub Actions SAM deploys: the GitHub OIDC
-  provider and a deploy role that the repo's dispatched workflow assumes.
-  Deploy once per environment account (dev/staging/prod).
+  Bootstrap one AWS account for GitHub Actions SAM deploys: a deploy role that
+  the repo's dispatched workflow assumes. The GitHub OIDC provider lives in the
+  common infra repo. Deploy once per environment account (dev/staging/prod).
 
 Parameters:
   Environment:
@@ -18,27 +18,8 @@ Parameters:
     Type: String
     Default: github-actions-deploy
     Description: Name of the IAM role assumed by GitHub Actions.
-  OidcThumbprint:
-    Type: String
-    Default: 1c58a3a8518e8759bf075b76b750d4f2df264fcd
-    Description: >-
-      SHA-1 fingerprint of the GitHub Actions OIDC server certificate.
 
 Resources:
-  GithubActionsOidcProvider:
-    Type: AWS::IAM::OIDCProvider
-    Properties:
-      Url: https://token.actions.githubusercontent.com
-      ClientIdList:
-        - sts.amazonaws.com
-      ThumbprintList:
-        - !Ref OidcThumbprint
-      Tags:
-        - Key: Project
-          Value: exam-generator
-        - Key: Environment
-          Value: !Ref Environment
-
   DeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -48,7 +29,9 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Federated: !GetAtt GithubActionsOidcProvider.Arn
+              Federated: !Sub
+                - arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+                - {}
             Action: sts:AssumeRoleWithWebIdentity
             Condition:
               StringEquals:
@@ -77,6 +60,3 @@ Outputs:
   DeployRoleArn:
     Description: Set as the AWS_ROLE_TO_ASSUME secret for the GitHub environment.
     Value: !GetAtt DeployRole.Arn
-  OidcProviderArn:
-    Description: The GitHub Actions OIDC provider ARN for this account.
-    Value: !GetAtt GithubActionsOidcProvider.Arn
