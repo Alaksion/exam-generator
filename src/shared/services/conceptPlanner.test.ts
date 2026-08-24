@@ -338,12 +338,28 @@ describe('planConcepts', () => {
     expect(sendMock).toHaveBeenCalledTimes(3);
   });
 
-  it('hard-fails when the Bedrock call itself throws', async () => {
+  it('fails fast on a non-transient Bedrock error without burning the retry budget', async () => {
     const throwingTopic = attributes.filter((a) => a.topicId === s3.id);
     sendMock.mockRejectedValue(new Error('bedrock boom'));
 
     await expect(planConcepts(throwingTopic, certification, 'corr-throw')).rejects.toThrow(
-      'Concept planner failed',
+      'bedrock boom',
     );
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries transient Bedrock errors within the attempt budget', async () => {
+    const transientTopic = attributes.filter((a) => a.topicId === s3.id);
+    sendMock
+      .mockRejectedValueOnce(Object.assign(new Error('throttled'), { name: 'ThrottlingException' }))
+      .mockResolvedValueOnce(planResponseFor([1, 2]));
+
+    const plan = await planConcepts(transientTopic, certification, 'corr-transient');
+
+    expect(plan).toEqual([
+      { number: 1, concept: 'concept-for-1' },
+      { number: 2, concept: 'concept-for-2' },
+    ]);
+    expect(sendMock).toHaveBeenCalledTimes(2);
   });
 });

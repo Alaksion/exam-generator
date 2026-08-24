@@ -99,7 +99,8 @@ async function processRecord(record: SQSRecord): Promise<void> {
     let rawResponses: string[];
     let contexts: QuestionAttributes[];
     let resultPlan: ConceptPlan | undefined;
-    if (config.examGenerationV2) {
+    const v2 = config.examGenerationV2;
+    if (v2) {
       const result = await generateExamQuestionsV2(
         generating,
         certification,
@@ -122,11 +123,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
     const { s3KeyJson, s3KeyPdf, s3KeyRaw, s3KeyPlan } = buildArtifactKeys(exam.id);
     const now = new Date();
     const transitioned = transitionExamStatus(generating, 'READY', now);
-    const schemaVersion = config.examGenerationV2
-      ? CANONICAL_EXAM_SCHEMA_VERSION_V2
-      : CANONICAL_EXAM_SCHEMA_VERSION;
+    const schemaVersion = v2 ? CANONICAL_EXAM_SCHEMA_VERSION_V2 : CANONICAL_EXAM_SCHEMA_VERSION;
 
-    const fullExam: FullExam = {
+const fullExam: FullExam = {
       schemaVersion,
       ...transitioned,
       s3KeyJson,
@@ -136,7 +135,7 @@ async function processRecord(record: SQSRecord): Promise<void> {
 
     await putArtifact(s3KeyRaw, JSON.stringify(rawResponses), 'application/json');
     await putArtifact(s3KeyJson, JSON.stringify(fullExam), 'application/json');
-    if (config.examGenerationV2 && resultPlan) {
+    if (resultPlan) {
       await putArtifact(s3KeyPlan, JSON.stringify(resultPlan), 'application/json');
     }
 

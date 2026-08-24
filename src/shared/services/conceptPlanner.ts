@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { Certification, QuestionAttributes, TopicContext } from '../types.js';
 import { config } from '../config.js';
-import { mapWithConcurrency } from './bedrock.js';
+import { mapWithConcurrency, isTransientError, renderTemplate } from './bedrock.js';
 
 export const ConceptPlanSchema = z.array(
   z.object({
@@ -24,15 +24,18 @@ export const CONCEPT_PLAN_PROMPT_TEMPLATE =
 
 export function buildConceptPlanFormatSpec(): string {
   const entryShape = ConceptPlanSchema.element.shape;
-  const example: Record<string, unknown> = {};
-  for (const key of Object.keys(entryShape)) {
-    if (key === 'number') {
-      example[key] = 1;
-    } else if (key === 'concept') {
-      example[key] = '<narrow, distinct sub-facet of the topic context>';
+  const example = (number: number): Record<string, unknown> => {
+    const row: Record<string, unknown> = {};
+    for (const key of Object.keys(entryShape)) {
+      if (key === 'number') {
+        row[key] = number;
+      } else if (key === 'concept') {
+        row[key] = '<narrow, distinct sub-facet of the topic context>';
+      }
     }
-  }
-  return JSON.stringify([example], null, 2);
+    return row;
+  };
+  return JSON.stringify([example(1), example(2)], null, 2);
 }
 
 export interface PlannerTopicGroup {
@@ -65,20 +68,12 @@ export function buildConceptPlanPrompt(
   certification: Certification,
 ): string {
   const numbers = group.questions.map((question) => question.number).join(', ');
-  const rendered = CONCEPT_PLAN_PROMPT_TEMPLATE.replace(/\{(\w+)\}/g, (match, key: string) => {
-    const value =
-      key === 'certificationName'
-        ? certification.name
-        : key === 'certificationCode'
-          ? certification.code
-          : key === 'topic'
-            ? group.topic
-            : key === 'topicContext'
-              ? group.topicContext
-              : key === 'numbers'
-                ? numbers
-                : undefined;
-    return value !== undefined ? String(value) : match;
+  const rendered = renderTemplate(CONCEPT_PLAN_PROMPT_TEMPLATE, {
+    certificationName: certification.name,
+    certificationCode: certification.code,
+    topic: group.topic,
+    topicContext: group.topicContext,
+    numbers,
   });
 
   return `${rendered}
@@ -175,19 +170,19 @@ async function planTopicGroup(
   let lastFailure: Error = new Error('Concept planner produced no output');
 
   for (let attempt = 0; attempt < config.bedrockMaxAttempts; attempt++) {
-    let rawResponse: string;
     try {
-      rawResponse = await invokePlannerOnce(group, certification, correlationId);
+      const rawResponse = await invokePlannerOnce(group, certification, correlationId);
+      const plan = parseConceptPlan(rawResponse);
+      if (plan && verifyPlanNumberSet(plan, expectedNumbers)) {
+        return plan;
+      }
+      lastFailure = new Error(`Concept plan structural mismatch for topic ${group.topicId}`);
     } catch (error) {
+      if (!isTransientError(error)) {
+        throw error;
+      }
       lastFailure = error instanceof Error ? error : new Error(String(error));
-      continue;
     }
-
-    const plan = parseConceptPlan(rawResponse);
-    if (plan && verifyPlanNumberSet(plan, expectedNumbers)) {
-      return plan;
-    }
-    lastFailure = new Error(`Concept plan structural mismatch for topic ${group.topicId}`);
   }
 
   throw new Error(

@@ -111,28 +111,36 @@ export const QUESTION_PROMPT_TEMPLATE =
   'Limit the scope of the question to the level of knowledge expected of a candidate sitting this certification. ' +
   'Generate a single question scoped to the knowledge domain {knowledgeDomain} and topic {topic}. ' +
   'The question must stay strictly within the scope described by this topic context: {topicContext}. ' +
+  '{conceptSentence}' +
   'The difficulty of the question must be {difficulty}. This is question number {questionNumber}. ' +
   'Return ONLY a strict JSON object in the exact format specified below.';
 
 export const CONCEPT_PROMPT_SENTENCE =
-  'The question must focus on exactly this concept, distinct from all other questions in the exam: {concept}.';
+  'The question must focus on exactly this concept, distinct from all other questions in the exam: {concept}. ';
 
 export function buildQuestionPrompt(context: PromptContext): string {
-  let rendered = renderPrompt(QUESTION_PROMPT_TEMPLATE, context);
-  if (context.concept) {
-    rendered += `\n${renderPrompt(CONCEPT_PROMPT_SENTENCE, context)}`;
-  }
+  const conceptSentence = context.concept
+    ? renderPrompt(CONCEPT_PROMPT_SENTENCE, context)
+    : '';
+  const rendered = renderPrompt(QUESTION_PROMPT_TEMPLATE, context).replace(
+    '{conceptSentence}',
+    conceptSentence,
+  );
   return `${rendered}
 
 Format:
 ${buildQuestionFormatSpec()}`;
 }
 
-export function renderPrompt(template: string, context: PromptContext): string {
+export function renderTemplate(template: string, values: Record<string, unknown>): string {
   return template.replace(/\{(\w+)\}/g, (_match, key: string) => {
-    const value = context[key as keyof PromptContext];
+    const value = values[key];
     return value !== undefined ? String(value) : _match;
   });
+}
+
+export function renderPrompt(template: string, context: PromptContext): string {
+  return renderTemplate(template, context as unknown as Record<string, unknown>);
 }
 
 export function allocateByWeight(questionCount: number, domains: KnowledgeDomain[]): number[] {
