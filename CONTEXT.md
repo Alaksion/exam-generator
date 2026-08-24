@@ -23,6 +23,8 @@ Pricing, analytics, and failure handling are explicitly out of scope for the MVP
 - **Topic Context** — Free-form prose attached to a `Topic` describing what the topic actually covers. Required and bounded (20–1500 characters); injected into the generator prompt as a hard scope boundary.
 - **Exam** — A generated, immutable practice exam. This is the primary artifact produced by the system.
 - **Question** — A single item inside an `Exam`. The MVP supports only single-answer multiple-choice questions.
+- **Concept** — A narrow, distinct sub-facet of a `Topic Context` assigned to a single question slot by the concept planner, so no two questions in the same topic cover the same angle. Injected into the generator prompt as an inner focus under the topic context's outer boundary. See ADR-0005.
+- **Concept Plan** — The planner's per-topic output: a 1:1 list of `{ number, concept }` mapping each question slot to its assigned concept. Persisted as `plan.json` under the V2 generator flag.
 - **AnswerOption** — One possible answer for a `Question`. It carries a display label, the answer text, and a flag indicating whether it is the correct answer.
 - **Generation Request** — The asynchronous command to create a new `Exam` for a given `Certification`.
 
@@ -81,10 +83,13 @@ SQS message sent to generator
 Generator atomically claims exam to status GENERATING
   │
   ▼
-Generator calls Bedrock once per question, with bounded concurrency
+Generator calls Bedrock once per question, with bounded concurrency.
+With V2 generation (EXAM_GENERATION_V2) it first runs a per-topic concept
+planner (one Bedrock call per topic, parallel) to de-duplicate concepts, then
+fans out per question with each slot's concept pinned.
   │
   ▼
-Generator uploads JSON + PDF to S3
+Generator uploads JSON + PDF (and plan.json under V2) to S3
   │
   ▼
 Exam updated to status READY  (or FAILED on any failure)
@@ -101,8 +106,9 @@ A `Question` is part of exactly one `Exam`.
 - `domain` — knowledge domain name, e.g. `Cloud Concepts`.
 - `domainId` — id of the knowledge domain it was generated from.
 - `topic` — topic name, e.g. `Amazon S3`.
-- `topicId` — id of the topic it was generated from.
-- `difficulty` — `easy`, `medium`, or `hard`.
+  - `topicId` — id of the topic it was generated from.
+  - `concept` — optional; the de-duplicated sub-facet of the topic context that this question covers (V2 generation only, see ADR-0005).
+  - `difficulty` — `easy`, `medium`, or `hard`.
 - `text` — question prompt.
 - `options` — list of `AnswerOption` values.
 - `explanation` — explanation of the correct answer.
@@ -148,6 +154,10 @@ An `AnswerOption`:
   ]
 }
 ```
+
+Under the V2 generator flag, each stored `Question` may additionally carry a
+`concept` field, `schemaVersion` is `3.0.0`, and a `plan.json` artifact records the
+planner output (see ADR-0005).
 
 ## Error vocabulary
 
