@@ -164,4 +164,5 @@ export interface QuestionAttributes {
   topic: string;
   topicId: string;
   topicContext: TopicContext;
+  concept?: string;
 }
