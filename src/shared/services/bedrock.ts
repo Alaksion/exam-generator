@@ -10,6 +10,7 @@ import {
 } from '../types.js';
 import { config } from '../config.js';
 import { buildQuestionFormatSpec } from './questionParser.js';
+import { planConcepts, zipConcepts, ConceptPlan } from './conceptPlanner.js';
 
 export interface PromptContext {
   questionNumber: number;
@@ -17,6 +18,7 @@ export interface PromptContext {
   knowledgeDomain: string;
   topic: string;
   topicContext: TopicContext;
+  concept?: string;
   certificationName: string;
   certificationCode: string;
 }
@@ -112,8 +114,15 @@ export const QUESTION_PROMPT_TEMPLATE =
   'The difficulty of the question must be {difficulty}. This is question number {questionNumber}. ' +
   'Return ONLY a strict JSON object in the exact format specified below.';
 
+export const CONCEPT_PROMPT_SENTENCE =
+  'The question must focus on exactly this concept, distinct from all other questions in the exam: {concept}.';
+
 export function buildQuestionPrompt(context: PromptContext): string {
-  return `${renderPrompt(QUESTION_PROMPT_TEMPLATE, context)}
+  let rendered = renderPrompt(QUESTION_PROMPT_TEMPLATE, context);
+  if (context.concept) {
+    rendered += `\n${renderPrompt(CONCEPT_PROMPT_SENTENCE, context)}`;
+  }
+  return `${rendered}
 
 Format:
 ${buildQuestionFormatSpec()}`;
@@ -227,6 +236,7 @@ export function buildPromptContext(
     knowledgeDomain: context.domain,
     topic: context.topic,
     topicContext: context.topicContext,
+    concept: context.concept,
     certificationName: certification.name,
     certificationCode: certification.code,
   };
@@ -259,6 +269,7 @@ export async function generateQuestionRaw(
     knowledgeDomain: context.knowledgeDomain,
     topic: context.topic,
     topicContext: context.topicContext,
+    concept: context.concept,
     prompt,
   });
 
@@ -327,4 +338,49 @@ export async function generateExamQuestions(
   });
 
   return rawResponses;
+}
+
+export interface V2GenerationResult {
+  rawResponses: string[];
+  contexts: QuestionAttributes[];
+  plan: ConceptPlan;
+}
+
+export async function generateExamQuestionsV2(
+  exam: Exam,
+  certification: Certification,
+  correlationId: string,
+): Promise<V2GenerationResult> {
+  const attributes = buildQuestionContexts(certification.config);
+  const plan = await planConcepts(attributes, certification, correlationId);
+  const contexts = zipConcepts(attributes, plan);
+
+  const rawResponses = await mapWithConcurrency(
+    contexts,
+    config.bedrockConcurrency,
+    async (attribute) => {
+      console.info('Generating question', {
+        correlationId,
+        examId: exam.id,
+        questionNumber: attribute.number,
+        difficulty: attribute.difficulty,
+        knowledgeDomain: attribute.domain,
+        topic: attribute.topic,
+        concept: attribute.concept,
+      });
+      return await generateQuestionRaw(
+        config.bedrockModelDefault,
+        buildPromptContext(attribute, certification),
+        correlationId,
+      );
+    },
+  );
+
+  console.info('Completed V2 Bedrock generation', {
+    correlationId,
+    examId: exam.id,
+    questionCount: rawResponses.length,
+  });
+
+  return { rawResponses, contexts, plan };
 }

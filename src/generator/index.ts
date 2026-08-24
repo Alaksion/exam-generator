@@ -1,12 +1,13 @@
-import { SQSEvent, SQSRecord } from 'aws-lambda';
+import { SQSRecord, SQSEvent } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { GeneratorMessage, FullExam, Exam } from '../shared/types.js';
+import { GeneratorMessage, FullExam, Exam, QuestionAttributes } from '../shared/types.js';
 import { config } from '../shared/config.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { transitionExamStatus } from '../shared/services/exam.js';
 import {
   generateExamQuestions,
+  generateExamQuestionsV2,
   buildQuestionContexts,
   regenerateQuestion,
 } from '../shared/services/bedrock.js';
@@ -91,12 +92,20 @@ async function processRecord(record: SQSRecord): Promise<void> {
       certificationId: message.certificationId,
     });
 
-    const rawResponses = await generateExamQuestions(
-      generating,
-      certification,
-      message.correlationId,
-    );
-    const contexts = buildQuestionContexts(certification.config);
+    let rawResponses: string[];
+    let contexts: QuestionAttributes[];
+    if (config.examGenerationV2) {
+      const result = await generateExamQuestionsV2(
+        generating,
+        certification,
+        message.correlationId,
+      );
+      rawResponses = result.rawResponses;
+      contexts = result.contexts;
+    } else {
+      rawResponses = await generateExamQuestions(generating, certification, message.correlationId);
+      contexts = buildQuestionContexts(certification.config);
+    }
     const questions = await parseExamQuestions(rawResponses, contexts, async (context) =>
       regenerateQuestion(context, certification, message.correlationId),
     );
