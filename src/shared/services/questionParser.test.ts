@@ -166,6 +166,19 @@ describe('parseQuestion', () => {
     const raw = JSON.stringify({ text: 'Missing options' });
     expect(parseQuestion(raw, context)).toBeNull();
   });
+
+  it('populates the concept from the context when present', () => {
+    const question = parseQuestion(JSON.stringify(validRawQuestion), {
+      ...context,
+      concept: 'lifecycle transitions',
+    });
+    expect(question?.concept).toBe('lifecycle transitions');
+  });
+
+  it('omits the concept when the context has none', () => {
+    const question = parseQuestion(JSON.stringify(validRawQuestion), context);
+    expect(question?.concept).toBeUndefined();
+  });
 });
 
 describe('parseExamQuestions', () => {

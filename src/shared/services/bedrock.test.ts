@@ -249,6 +249,25 @@ describe('QUESTION_PROMPT_TEMPLATE / buildQuestionPrompt', () => {
     expect(prompt).toContain(baseContext.topicContext);
     expect(prompt).not.toContain('{topicContext}');
   });
+
+  it('appends a concept focus sentence when a concept is present, keeping the topic boundary', () => {
+    const conceptContext: PromptContext = { ...baseContext, concept: 'lifecycle transitions' };
+    const prompt = buildQuestionPrompt(conceptContext);
+
+    expect(prompt).toContain(
+      'The question must focus on exactly this concept, distinct from all other questions in the exam:',
+    );
+    expect(prompt).toContain('lifecycle transitions');
+    expect(prompt).toContain('strictly within the scope described by this topic context');
+    expect(prompt).not.toContain('{concept}');
+  });
+
+  it('leaves the prompt byte-identical to the flag-off form when no concept is present', () => {
+    const prompt = buildQuestionPrompt(baseContext);
+
+    expect(prompt).not.toContain('The question must focus on exactly this concept');
+    expect(prompt).not.toContain('{concept}');
+  });
 });
 
 describe('allocateByWeight', () => {
@@ -409,6 +428,23 @@ describe('buildPromptContext', () => {
       certificationName: certification.name,
       certificationCode: certification.code,
     });
+  });
+
+  it('threads an optional concept through to the prompt context', () => {
+    const attributes: QuestionAttributes = {
+      number: 1,
+      difficulty: 'medium',
+      domain: 'Cloud Concepts',
+      domainId: '22222222-2222-2222-2222-222222222222',
+      topic: 'Amazon S3',
+      topicId: '33333333-3333-3333-3333-333333333333',
+      topicContext: certification.config.domains[0].topics[0].context,
+      concept: 'lifecycle transitions',
+    };
+
+    const context = buildPromptContext(attributes, certification);
+
+    expect(context.concept).toBe('lifecycle transitions');
   });
 });
 

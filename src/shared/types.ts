@@ -123,6 +123,7 @@ export const Question = z.object({
   options: z.array(AnswerOption).min(2),
   explanation: z.string().min(1),
   reference: z.string().optional(),
+  concept: z.string().optional(),
 });
 export type Question = z.infer<typeof Question>;
 
@@ -164,4 +165,5 @@ export interface QuestionAttributes {
   topic: string;
   topicId: string;
   topicContext: TopicContext;
+  concept?: string;
 }

@@ -1,12 +1,14 @@
-import { SQSEvent, SQSRecord } from 'aws-lambda';
+import { SQSRecord, SQSEvent } from 'aws-lambda';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { GeneratorMessage, FullExam, Exam } from '../shared/types.js';
+import { GeneratorMessage, FullExam, Exam, QuestionAttributes } from '../shared/types.js';
+import { ConceptPlan } from '../shared/services/conceptPlanner.js';
 import { config } from '../shared/config.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
 import { transitionExamStatus } from '../shared/services/exam.js';
 import {
   generateExamQuestions,
+  generateExamQuestionsV2,
   buildQuestionContexts,
   regenerateQuestion,
 } from '../shared/services/bedrock.js';
@@ -15,6 +17,7 @@ import { parseExamQuestions } from '../shared/services/questionParser.js';
 import { renderExamPdf } from '../shared/services/pdfRenderer.js';
 
 export const CANONICAL_EXAM_SCHEMA_VERSION = '2.0.0';
+export const CANONICAL_EXAM_SCHEMA_VERSION_V2 = '3.0.0';
 
 const s3Client = new S3Client({});
 
@@ -22,11 +25,13 @@ export function buildArtifactKeys(examId: string): {
   s3KeyJson: string;
   s3KeyPdf: string;
   s3KeyRaw: string;
+  s3KeyPlan: string;
 } {
   return {
     s3KeyJson: `exams/${examId}/exam.json`,
     s3KeyPdf: `exams/${examId}/exam.pdf`,
     s3KeyRaw: `exams/${examId}/raw.json`,
+    s3KeyPlan: `exams/${examId}/plan.json`,
   };
 }
 
@@ -91,12 +96,23 @@ async function processRecord(record: SQSRecord): Promise<void> {
       certificationId: message.certificationId,
     });
 
-    const rawResponses = await generateExamQuestions(
-      generating,
-      certification,
-      message.correlationId,
-    );
-    const contexts = buildQuestionContexts(certification.config);
+    let rawResponses: string[];
+    let contexts: QuestionAttributes[];
+    let resultPlan: ConceptPlan | undefined;
+    const v2 = config.examGenerationV2;
+    if (v2) {
+      const result = await generateExamQuestionsV2(
+        generating,
+        certification,
+        message.correlationId,
+      );
+      rawResponses = result.rawResponses;
+      contexts = result.contexts;
+      resultPlan = result.plan;
+    } else {
+      rawResponses = await generateExamQuestions(generating, certification, message.correlationId);
+      contexts = buildQuestionContexts(certification.config);
+    }
     const questions = await parseExamQuestions(rawResponses, contexts, async (context) =>
       regenerateQuestion(context, certification, message.correlationId),
     );
@@ -104,12 +120,13 @@ async function processRecord(record: SQSRecord): Promise<void> {
       throw new Error('Question parsing failed after retry');
     }
 
-    const { s3KeyJson, s3KeyPdf, s3KeyRaw } = buildArtifactKeys(exam.id);
+    const { s3KeyJson, s3KeyPdf, s3KeyRaw, s3KeyPlan } = buildArtifactKeys(exam.id);
     const now = new Date();
     const transitioned = transitionExamStatus(generating, 'READY', now);
+    const schemaVersion = v2 ? CANONICAL_EXAM_SCHEMA_VERSION_V2 : CANONICAL_EXAM_SCHEMA_VERSION;
 
-    const fullExam: FullExam = {
-      schemaVersion: CANONICAL_EXAM_SCHEMA_VERSION,
+const fullExam: FullExam = {
+      schemaVersion,
       ...transitioned,
       s3KeyJson,
       s3KeyPdf,
@@ -118,6 +135,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
 
     await putArtifact(s3KeyRaw, JSON.stringify(rawResponses), 'application/json');
     await putArtifact(s3KeyJson, JSON.stringify(fullExam), 'application/json');
+    if (resultPlan) {
+      await putArtifact(s3KeyPlan, JSON.stringify(resultPlan), 'application/json');
+    }
 
     const pdfBuffer = await renderExamPdf(fullExam);
     await putArtifact(s3KeyPdf, pdfBuffer, 'application/pdf');
