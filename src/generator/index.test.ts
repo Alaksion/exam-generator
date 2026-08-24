@@ -1,9 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SQSEvent } from 'aws-lambda';
 import { handler, buildArtifactKeys, CANONICAL_EXAM_SCHEMA_VERSION } from './index.js';
 import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
 import { getCertificationById } from '../shared/repositories/certifications.js';
-import { generateExamQuestions } from '../shared/services/bedrock.js';
+import {
+  generateExamQuestions,
+  generateExamQuestionsV2,
+} from '../shared/services/bedrock.js';
 import { parseExamQuestions } from '../shared/services/questionParser.js';
 import { renderExamPdf } from '../shared/services/pdfRenderer.js';
 import { certification } from '../test/fixtures/certification.js';
@@ -30,6 +33,7 @@ vi.mock('@aws-sdk/client-s3', () => {
 
 vi.mock('../shared/services/bedrock.js', () => ({
   generateExamQuestions: vi.fn(),
+  generateExamQuestionsV2: vi.fn(),
   buildQuestionContexts: vi.fn(() => []),
   regenerateQuestion: vi.fn(),
 }));
@@ -46,6 +50,7 @@ const mockedGetExam = vi.mocked(getExamById);
 const mockedUpdateExam = vi.mocked(updateExamStatus);
 const mockedGetCert = vi.mocked(getCertificationById);
 const mockedGenerateExamQuestions = vi.mocked(generateExamQuestions);
+const mockedGenerateExamQuestionsV2 = vi.mocked(generateExamQuestionsV2);
 const mockedParseExamQuestions = vi.mocked(parseExamQuestions);
 const mockedRenderExamPdf = vi.mocked(renderExamPdf);
 
@@ -97,6 +102,11 @@ function makeEvent(message: object): SQSEvent {
 beforeEach(() => {
   vi.clearAllMocks();
   mockedUpdateExam.mockResolvedValue(true);
+  delete process.env.EXAM_GENERATION_V2;
+});
+
+afterEach(() => {
+  delete process.env.EXAM_GENERATION_V2;
 });
 
 const sampleQuestion = {
@@ -292,5 +302,42 @@ describe('generator handler', () => {
 
     expect(mockedUpdateExam).not.toHaveBeenCalled();
     expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+  });
+
+  it('routes to the V2 flow when EXAM_GENERATION_V2 is on', async () => {
+    process.env.EXAM_GENERATION_V2 = 'true';
+    const contexts = [
+      {
+        number: 1,
+        difficulty: 'medium' as const,
+        domain: 'Cloud Concepts',
+        domainId: '22222222-2222-2222-2222-222222222222',
+        topic: 'Amazon S3',
+        topicId: '33333333-3333-3333-3333-333333333333',
+        topicContext: certification.config.domains[0].topics[0].context,
+        concept: 'lifecycle transitions',
+      },
+    ];
+    const pdfBytes = Buffer.from('mock-pdf-bytes');
+    mockedGetExam.mockResolvedValue(pendingExam);
+    mockedGetCert.mockResolvedValue(certification);
+    mockedGenerateExamQuestionsV2.mockResolvedValue({
+      rawResponses: ['raw-response'],
+      contexts,
+      plan: [{ number: 1, concept: 'lifecycle transitions' }],
+    });
+    mockedParseExamQuestions.mockResolvedValue([sampleQuestion]);
+    mockedRenderExamPdf.mockResolvedValue(pdfBytes);
+
+    await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
+
+    expect(mockedGenerateExamQuestionsV2).toHaveBeenCalledWith(
+      claimedExam,
+      certification,
+      correlationId,
+    );
+    expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
+    expect(mockedParseExamQuestions).toHaveBeenCalledWith(['raw-response'], contexts, expect.any(Function));
+    expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'READY', expect.any(Object));
   });
 });
