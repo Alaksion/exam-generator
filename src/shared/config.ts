@@ -34,6 +34,7 @@ export interface Config {
   presignedUrlExpirationSeconds: number;
   signupMode: SignupMode;
   betaAllowlist: Set<string>;
+  examGenerationV2: boolean;
 }
 
 // Env vars are resolved lazily so a function only fails on the variables it
@@ -83,5 +84,8 @@ export const config: Config = {
         .map((entry) => entry.trim().toLowerCase())
         .filter((entry) => entry.length > 0),
     );
+  },
+  get examGenerationV2() {
+    return process.env.EXAM_GENERATION_V2 === 'true';
   },
 };

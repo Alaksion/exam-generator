@@ -30,6 +30,13 @@ Parameters:
     Type: String
     Default: amazon.nova-lite-v1:0
     Description: Default Bedrock model used when a certification does not specify one.
+  ExamGenerationV2:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Enable the V2 (concept-planner-backed) exam generation workflow. Defaults to off.
   ApiThrottleRateLimit:
     Type: Number
     Default: 50
@@ -394,6 +401,9 @@ Resources:
 # not redelivered while the worker still runs (redelivery + maxReceiveCount would DLQ it).
       Timeout: 600
       MemorySize: 2048
+      Environment:
+        Variables:
+          EXAM_GENERATION_V2: !Ref ExamGenerationV2
       Events:
         SqsEvent:
           Type: SQS
