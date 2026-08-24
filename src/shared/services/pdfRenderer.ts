@@ -43,8 +43,9 @@ function initializeFonts(): void {
 }
 
 function renderQuestion(q: Question): Content[] {
+  const concept = q.concept ? ` — ${q.concept}` : '';
   return [
-    { text: `Question ${q.number} — ${q.domain} (${q.difficulty})`, style: 'questionTitle' },
+    { text: `Question ${q.number} — ${q.domain} (${q.difficulty})${concept}`, style: 'questionTitle' },
     { text: q.text, margin: [0, 0, 0, 8] },
     ...q.options.map((option) => ({
       text: `${option.label}. ${option.text}`,

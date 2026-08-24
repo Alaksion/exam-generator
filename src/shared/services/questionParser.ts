@@ -90,6 +90,7 @@ export function parseQuestion(rawResponse: string, context: QuestionAttributes):
     })),
     explanation: question.explanation,
     reference: question.reference,
+    concept: context.concept,
   };
 }
 
