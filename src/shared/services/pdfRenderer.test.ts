@@ -79,4 +79,17 @@ describe('renderExamPdf', () => {
 
     await expect(renderExamPdf(invalidExam)).rejects.toThrow('Question 1 has no correct option');
   });
+
+  it('renders a valid PDF when questions carry a concept (absent field is unchanged)', async () => {
+    const withConcept: FullExam = {
+      ...exam,
+      questions: [{ ...exam.questions[0], concept: 'lifecycle transitions' }],
+    };
+
+    const buffer = await renderExamPdf(withConcept);
+
+    expect(buffer).toBeInstanceOf(Buffer);
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.toString('ascii', 0, 5)).toBe('%PDF-');
+  });
 });
