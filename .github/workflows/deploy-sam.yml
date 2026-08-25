@@ -72,6 +72,7 @@ jobs:
           AUTH_LOGOUT_URL: ${{ secrets.AUTH_LOGOUT_URL }}
           SIGNUP_MODE: ${{ secrets.SIGNUP_MODE || 'open' }}
           BETA_ALLOWLIST: ${{ secrets.BETA_ALLOWLIST }}
+          EXAM_GENERATION_V2: ${{ secrets.EXAM_GENERATION_V2 || 'false' }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APPLE_SERVICES_ID: ${{ secrets.APPLE_SERVICES_ID }}
@@ -94,6 +95,7 @@ jobs:
                AuthLogoutUrl=\"${AUTH_LOGOUT_URL}\" \
                SignupMode=\"${SIGNUP_MODE}\" \
                BetaAllowlist=\"${BETA_ALLOWLIST}\" \
+               ExamGenerationV2=\"${EXAM_GENERATION_V2}\" \
                GoogleClientId=\"${GOOGLE_CLIENT_ID}\" \
                GoogleClientSecret=\"${GOOGLE_CLIENT_SECRET}\" \
                AppleServicesId=\"${APPLE_SERVICES_ID}\" \
