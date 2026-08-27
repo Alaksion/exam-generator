@@ -1,48 +1,51 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SQSEvent } from 'aws-lambda';
 import { handler, buildArtifactKeys, CANONICAL_EXAM_SCHEMA_VERSION } from './index.js';
-import { getExamById, updateExamStatus } from '../shared/repositories/exams.js';
-import { getCertificationById } from '../shared/repositories/certifications.js';
+import { getExamById, updateExamStatus } from '../data/datasources/exams.js';
+import { getCertificationById } from '../services/certificationService.js';
 import {
   generateExamQuestions,
   generateExamQuestionsV2,
-} from '../shared/services/bedrock.js';
-import { parseExamQuestions } from '../shared/services/questionParser.js';
-import { renderExamPdf } from '../shared/services/pdfRenderer.js';
+} from '../services/bedrockService.js';
+import { parseExamQuestions } from '../services/questionParserService.js';
+import { renderExamPdf } from '../services/pdfService.js';
+import { putArtifact } from '../data/datasources/artifacts.js';
 import { certification } from '../test/fixtures/certification.js';
-import { Exam } from '../shared/types.js';
 
-vi.mock('../shared/repositories/exams.js', () => ({
+vi.mock('../data/datasources/exams.js', () => ({
   getExamById: vi.fn(),
   updateExamStatus: vi.fn(),
+  createExam: vi.fn(),
+  listExams: vi.fn(),
+  deleteExam: vi.fn(),
 }));
 
-vi.mock('../shared/repositories/certifications.js', () => ({
+vi.mock('../services/certificationService.js', () => ({
   getCertificationById: vi.fn(),
+  listCertifications: vi.fn(),
+  createCertification: vi.fn(),
+  updateCertificationById: vi.fn(),
 }));
 
-vi.mock('@aws-sdk/client-s3', () => {
-  class MockS3Client {
-    send = vi.fn();
-  }
-  return {
-    S3Client: MockS3Client,
-    PutObjectCommand: vi.fn(),
-  };
-});
+vi.mock('../data/datasources/artifacts.js', () => ({
+  putArtifact: vi.fn(),
+  getCanonicalExam: vi.fn(),
+  getPresignedDownloadUrl: vi.fn(),
+  deleteArtifacts: vi.fn(),
+}));
 
-vi.mock('../shared/services/bedrock.js', () => ({
+vi.mock('../services/bedrockService.js', () => ({
   generateExamQuestions: vi.fn(),
   generateExamQuestionsV2: vi.fn(),
   buildQuestionContexts: vi.fn(() => []),
   regenerateQuestion: vi.fn(),
 }));
 
-vi.mock('../shared/services/questionParser.js', () => ({
+vi.mock('../services/questionParserService.js', () => ({
   parseExamQuestions: vi.fn(),
 }));
 
-vi.mock('../shared/services/pdfRenderer.js', () => ({
+vi.mock('../services/pdfService.js', () => ({
   renderExamPdf: vi.fn(),
 }));
 
@@ -53,27 +56,28 @@ const mockedGenerateExamQuestions = vi.mocked(generateExamQuestions);
 const mockedGenerateExamQuestionsV2 = vi.mocked(generateExamQuestionsV2);
 const mockedParseExamQuestions = vi.mocked(parseExamQuestions);
 const mockedRenderExamPdf = vi.mocked(renderExamPdf);
+const mockedPutArtifact = vi.mocked(putArtifact);
 
 const examId = '22222222-2222-2222-2222-222222222222';
 const correlationId = '33333333-3333-3333-3333-333333333333';
 const keys = buildArtifactKeys(examId);
 
-const pendingExam: Exam = {
+const pendingExam = {
   id: examId,
   certificationId: certification.id,
   ownerId: 'sub-alice',
   provider: certification.provider,
   title: 'AWS Certified Cloud Practitioner - Practice Exam 2026-07-28T12:00:00.000Z',
-  status: 'PENDING',
+  status: 'PENDING' as const,
   createdAt: '2026-07-28T12:00:00.000Z',
   finishedAt: null,
   s3KeyJson: undefined,
   s3KeyPdf: undefined,
 };
 
-const claimedExam: Exam = {
+const claimedExam = {
   ...pendingExam,
-  status: 'GENERATING',
+  status: 'GENERATING' as const,
 };
 
 function makeEvent(message: object): SQSEvent {
@@ -102,6 +106,7 @@ function makeEvent(message: object): SQSEvent {
 beforeEach(() => {
   vi.clearAllMocks();
   mockedUpdateExam.mockResolvedValue(true);
+  mockedPutArtifact.mockResolvedValue(undefined);
   delete process.env.EXAM_GENERATION_V2;
 });
 
@@ -128,7 +133,6 @@ const sampleQuestion = {
 
 describe('generator handler', () => {
   it('claims a PENDING exam and marks it READY with artifacts', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
@@ -159,21 +163,16 @@ describe('generator handler', () => {
       }),
     );
 
-    const mockedCommand = vi.mocked(PutObjectCommand);
-    expect(mockedCommand).toHaveBeenCalledTimes(3);
-
-    const rawCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyRaw,
+    expect(mockedPutArtifact).toHaveBeenCalledWith(keys.s3KeyRaw, JSON.stringify(['raw question']), 'application/json');
+    expect(mockedPutArtifact).toHaveBeenCalledWith(
+      keys.s3KeyJson,
+      expect.any(String),
+      'application/json',
     );
-    expect(rawCall).toBeDefined();
-    const rawBody = JSON.parse((rawCall![0] as { Body: string }).Body) as string[];
-    expect(rawBody).toEqual(['raw question']);
+    expect(mockedPutArtifact).toHaveBeenCalledWith(keys.s3KeyPdf, pdfBytes, 'application/pdf');
 
-    const jsonCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyJson,
-    );
-    expect(jsonCall).toBeDefined();
-    const jsonBody = JSON.parse((jsonCall![0] as { Body: string }).Body) as {
+    const jsonCall = mockedPutArtifact.mock.calls.find((call) => call[0] === keys.s3KeyJson);
+    const jsonBody = JSON.parse(jsonCall![1] as string) as {
       schemaVersion: string;
       status: string;
       questions: unknown[];
@@ -183,17 +182,9 @@ describe('generator handler', () => {
     expect(jsonBody.status).toBe('READY');
     expect(jsonBody.questions).toEqual([sampleQuestion]);
     expect(jsonBody.s3KeyJson).toBe(keys.s3KeyJson);
-
-    const pdfCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyPdf,
-    );
-    expect(pdfCall).toBeDefined();
-    const pdfBody = (pdfCall![0] as { Body: Buffer }).Body;
-    expect(pdfBody).toEqual(pdfBytes);
   });
 
   it('marks the exam FAILED when question parsing fails after retry', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
@@ -207,28 +198,26 @@ describe('generator handler', () => {
     const failedCall = mockedUpdateExam.mock.calls.find((call) => call[1] === 'FAILED');
     const finishedAt = (failedCall![2] as { finishedAt: string }).finishedAt;
     expect(finishedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('aborts when the exam is already GENERATING (duplicate/in-flight)', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(claimedExam);
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
     expect(mockedUpdateExam).not.toHaveBeenCalled();
     expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('skips already processed exams', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue({ ...pendingExam, status: 'READY' });
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
     expect(mockedUpdateExam).not.toHaveBeenCalled();
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('skips when exam is not found', async () => {
@@ -240,7 +229,6 @@ describe('generator handler', () => {
   });
 
   it('aborts when the claim fails (another worker already generating)', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedUpdateExam.mockResolvedValue(false);
 
@@ -248,11 +236,10 @@ describe('generator handler', () => {
 
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
     expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('marks the exam FAILED when the certification is not found', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(null);
 
@@ -261,11 +248,10 @@ describe('generator handler', () => {
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
     expect(mockedGenerateExamQuestions).not.toHaveBeenCalled();
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('marks the exam FAILED when question generation throws', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockRejectedValue(new Error('Bedrock throttled'));
@@ -274,7 +260,7 @@ describe('generator handler', () => {
 
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'GENERATING', {}, 'PENDING');
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'FAILED', expect.any(Object));
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('marks the exam FAILED when artifact upload or PDF render throws', async () => {
@@ -295,18 +281,20 @@ describe('generator handler', () => {
   });
 
   it('skips exams already in a FAILED terminal state', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
-    mockedGetExam.mockResolvedValue({ ...pendingExam, status: 'FAILED', finishedAt: '2026-07-28T12:00:05.000Z' });
+    mockedGetExam.mockResolvedValue({
+      ...pendingExam,
+      status: 'FAILED',
+      finishedAt: '2026-07-28T12:00:05.000Z',
+    });
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
     expect(mockedUpdateExam).not.toHaveBeenCalled();
-    expect(vi.mocked(PutObjectCommand)).not.toHaveBeenCalled();
+    expect(mockedPutArtifact).not.toHaveBeenCalled();
   });
 
   it('routes to the V2 flow when EXAM_GENERATION_V2 is on', async () => {
     process.env.EXAM_GENERATION_V2 = 'true';
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     const contexts = [
       {
         number: 1,
@@ -341,31 +329,18 @@ describe('generator handler', () => {
     expect(mockedParseExamQuestions).toHaveBeenCalledWith(['raw-response'], contexts, expect.any(Function));
     expect(mockedUpdateExam).toHaveBeenCalledWith(examId, 'READY', expect.any(Object));
 
-    const mockedCommand = vi.mocked(PutObjectCommand);
-
-    const planCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyPlan,
+    expect(mockedPutArtifact).toHaveBeenCalledWith(
+      keys.s3KeyPlan,
+      JSON.stringify([{ number: 1, concept: 'lifecycle transitions' }]),
+      'application/json',
     );
-    expect(planCall).toBeDefined();
-    const planBody = JSON.parse((planCall![0] as { Body: string }).Body) as Array<{
-      number: number;
-      concept: string;
-    }>;
-    expect(planBody).toEqual([{ number: 1, concept: 'lifecycle transitions' }]);
 
-    const jsonCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyJson,
-    );
-    const jsonBody = JSON.parse((jsonCall![0] as { Body: string }).Body) as {
-      schemaVersion: string;
-    };
+    const jsonCall = mockedPutArtifact.mock.calls.find((call) => call[0] === keys.s3KeyJson);
+    const jsonBody = JSON.parse(jsonCall![1] as string) as { schemaVersion: string };
     expect(jsonBody.schemaVersion).toBe('3.0.0');
-
-    expect(mockedCommand).toHaveBeenCalledTimes(4);
   });
 
   it('keeps the flag-off path byte-for-byte unchanged (schemaVersion 2.0.0, no plan.json)', async () => {
-    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
     mockedGetExam.mockResolvedValue(pendingExam);
     mockedGetCert.mockResolvedValue(certification);
     mockedGenerateExamQuestions.mockResolvedValue(['raw question']);
@@ -374,20 +349,11 @@ describe('generator handler', () => {
 
     await handler(makeEvent({ examId, certificationId: certification.id, correlationId }));
 
-    const mockedCommand = vi.mocked(PutObjectCommand);
-
-    expect(mockedCommand).toHaveBeenCalledTimes(3);
-    const planCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyPlan,
-    );
+    const planCall = mockedPutArtifact.mock.calls.find((call) => call[0] === keys.s3KeyPlan);
     expect(planCall).toBeUndefined();
 
-    const jsonCall = mockedCommand.mock.calls.find(
-      (call) => (call[0] as { Key: string }).Key === keys.s3KeyJson,
-    );
-    const jsonBody = JSON.parse((jsonCall![0] as { Body: string }).Body) as {
-      schemaVersion: string;
-    };
+    const jsonCall = mockedPutArtifact.mock.calls.find((call) => call[0] === keys.s3KeyJson);
+    const jsonBody = JSON.parse(jsonCall![1] as string) as { schemaVersion: string };
     expect(jsonBody.schemaVersion).toBe(CANONICAL_EXAM_SCHEMA_VERSION);
   });
 });

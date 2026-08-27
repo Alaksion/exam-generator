@@ -1,4 +1,4 @@
-import { Certification } from '../../shared/types.js';
+import { Certification } from '../../services/model.js';
 
 function topicContext(domainName: string, topicName: string): string {
   const domain = certificationInput.config.domains.find((d) => d.name === domainName);

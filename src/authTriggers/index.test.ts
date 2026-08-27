@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PreSignUpTriggerEvent, PostConfirmationConfirmSignUpTriggerEvent } from 'aws-lambda';
-import { handler, EmailLockedError, SignupNotAllowedError } from './index.js';
-import * as usersRepo from '../shared/repositories/users.js';
+import { handler } from './index.js';
+import { EmailLockedError, SignupNotAllowedError } from '../services/signupService.js';
+import * as usersRepo from '../data/datasources/users.js';
 
-vi.mock('../shared/repositories/users.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../shared/repositories/users.js')>();
+vi.mock('../data/datasources/users.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../data/datasources/users.js')>();
   return {
     ...actual,
     getUserByEmail: vi.fn(),

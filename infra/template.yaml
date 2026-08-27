@@ -283,7 +283,7 @@ Resources:
         Target: es2022
         Sourcemap: true
         EntryPoints:
-          - src/api/index.ts
+          - src/http/index.ts
         Loader:
           - .ts=ts
     Properties:
