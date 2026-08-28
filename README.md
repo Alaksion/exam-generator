@@ -4,6 +4,11 @@ Serverless backend for a mock-exam generator. It exposes a public REST API and a
 
 The architecture is described in [`CONTEXT.md`](./CONTEXT.md) and [`docs/adr/0001-domain-model-and-aws-mvp-architecture.md`](./docs/adr/0001-domain-model-and-aws-mvp-architecture.md).
 
+## Related repositories
+
+- [**exam-generator-website**](https://github.com/Alaksion/exam-generator-website) — the client application that consumes this API. It drives the Cognito auth flows (sign-up, sign-in, social sign-in) against the user pool configured here and calls the endpoints documented below.
+- [**exam-generator-shared-infra**](https://github.com/Alaksion/exam-generator-shared-infra) — shared infrastructure. Notably it hosts the **GitHub OIDC provider** configuration that the CI/CD deploys in this repo assume a role through. See [GitHub Actions bootstrap](#github-actions-bootstrap).
+
 ## Architecture overview
 
 ```
@@ -137,18 +142,24 @@ Unset optional secrets pass an empty value, which the template already treats as
 
 #### GitHub Actions bootstrap
 
-To let the dispatched workflow assume a role in each account, run the bootstrap
-stack **once per account** from that account's own profile:
+The GitHub **OIDC provider** is account-wide identity infrastructure and is owned
+by the [**exam-generator-shared-infra**](https://github.com/Alaksion/exam-generator-shared-infra)
+repository — set it up there once, before running anything here.
+
+This repo's `infra/bootstrap.yaml` creates only the per-account
+`github-actions-deploy` IAM role that the dispatched workflow assumes. It relies
+on the OIDC provider already existing in that account, and scopes the role's
+trust policy `sub` to `repo:<org>/<repo>:environment:<env>`, so the role can only
+be assumed by this repo on its own environment. Run the bootstrap **once per
+account** from that account's own profile:
 
 ```bash
 scripts/bootstrap-github-actions.sh dev    # or staging / prod
 ```
 
-`infra/bootstrap.yaml` creates the GitHub OIDC provider and a
-`github-actions-deploy` IAM role whose trust policy restricts `sub` to
-`repo:<org>/<repo>:environment:<env>`, so the role can only be assumed by this
-repo on its own environment. The script prints the exact `gh secret set` lines
-(with the role ARN) to store in the matching GitHub environment.
+`infra/bootstrap.yaml` creates the `github-actions-deploy` IAM role and returns its
+ARN; the script prints the exact `gh secret set` lines (with the role ARN) to store
+in the matching GitHub environment.
 
 By hand:
 
@@ -162,8 +173,11 @@ aws cloudformation deploy \
 ```
 
 The role attaches `AdministratorAccess` (account-scoped, OIDC-locked); swap it
-for a least-privilege policy after launch if desired. Override `OidcThumbprint`
-if GitHub rotates the OIDC cert and a deploy is rejected.
+for a least-privilege policy after launch if desired. The OIDC provider itself
+(including the `OidcThumbprint`, which needs updating only if GitHub rotates the
+OIDC cert) is managed in the
+[exam-generator-shared-infra](https://github.com/Alaksion/exam-generator-shared-infra)
+repository.
 
 ### 3. Build the project
 
