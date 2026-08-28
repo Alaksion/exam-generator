@@ -157,6 +157,14 @@ account** from that account's own profile:
 scripts/bootstrap-github-actions.sh dev    # or staging / prod
 ```
 
+> **Before deploying the bootstrap**, update the repo subject in
+> `infra/bootstrap.yaml` (`token.actions.githubusercontent.com:sub`, the
+> `repo:<owner>/<repo>:environment:${Environment}` entry) to match **your** GitHub
+> owner and repository name. As committed it is pinned to the original
+> `Alaksion@30579274/exam-generator@1314515687`. If you forked or renamed the repo,
+> the role's trust policy must be updated here or GitHub Actions will be unable to
+> assume it.
+
 `infra/bootstrap.yaml` creates the `github-actions-deploy` IAM role and returns its
 ARN; the script prints the exact `gh secret set` lines (with the role ARN) to store
 in the matching GitHub environment.
