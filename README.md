@@ -120,16 +120,16 @@ workflow is the single source of truth for a deploy (no reliance on a committed
 **Required secrets per environment** (`dev`, `staging`, `prod`), stored as
 GitHub environment secrets:
 
-| Secret | Notes |
-| --- | --- |
-| `AWS_ROLE_TO_ASSUME` | IAM role ARN in that environment's AWS account (OIDC) |
-| `AWS_REGION` | e.g. `us-east-1` |
-| `ALLOWED_ORIGINS` | the environment's web origin |
-| `AUTH_CALLBACK_URL` / `AUTH_LOGOUT_URL` | the environment's Cognito callback/logout |
-| `SIGNUP_MODE` | `open` / `invite` |
-| `BETA_ALLOWLIST` | comma-separated emails/domains (invite mode) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | leave unset to disable Google |
-| `APPLE_SERVICES_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY_SECRET_ARN` | leave unset to disable Apple |
+| Secret                                                                                  | Notes                                                 |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `AWS_ROLE_TO_ASSUME`                                                                    | IAM role ARN in that environment's AWS account (OIDC) |
+| `AWS_REGION`                                                                            | e.g. `us-east-1`                                      |
+| `ALLOWED_ORIGINS`                                                                       | the environment's web origin                          |
+| `AUTH_CALLBACK_URL` / `AUTH_LOGOUT_URL`                                                 | the environment's Cognito callback/logout             |
+| `SIGNUP_MODE`                                                                           | `open` / `invite`                                     |
+| `BETA_ALLOWLIST`                                                                        | comma-separated emails/domains (invite mode)          |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`                                             | leave unset to disable Google                         |
+| `APPLE_SERVICES_ID` / `APPLE_TEAM_ID` / `APPLE_KEY_ID` / `APPLE_PRIVATE_KEY_SECRET_ARN` | leave unset to disable Apple                          |
 
 Unset optional secrets pass an empty value, which the template already treats as
 "IdP disabled." Use the environment's **required reviewers** protection rule on
@@ -262,91 +262,57 @@ The script sets the matching user's role to `admin` directly in the table. Re-ru
 idempotent. Ongoing promotion/demotion goes through `PUT /v1/admin/users/{id}/role`
 (admin-only).
 
-## Project layout
-
-```
-.
-├── infra/
-│   ├── template.yaml          # SAM application stack
-│   └── bootstrap.yaml         # Per-account GitHub Actions OIDC + deploy role
-├── .github/
-│   └── workflows/
-│       └── deploy-sam.yml     # Dispatched SAM deploy (dev/staging/prod)
-├── samconfig.example.toml     # Example SAM config — dev (do not commit secrets)
-├── samconfig.staging.example.toml  # Example SAM config — staging
-├── samconfig.prod.example.toml     # Example SAM config — production
-├── samconfig.toml             # Local .gitignored per-env configs
-├── tsconfig.json              # TypeScript configuration
-├── package.json               # Node.js dependencies and scripts
-├── Makefile                   # Common build/run/deploy commands
-├── src/
-│   ├── api/                   # API Gateway Lambda handler
-│   │   └── index.ts           # HTTP router and endpoint handlers
-│   ├── authTriggers/          # Cognito email-lock + user-provisioning triggers
-│   │   └── index.ts
-│   ├── generator/             # SQS worker Lambda
-│   │   └── index.ts
-│   └── shared/                # Shared code
-│       ├── types.ts           # Domain types and Zod schemas
-│       ├── errors.ts          # API error vocabulary
-│       ├── config.ts          # Environment-driven configuration
-│       ├── router.ts          # Minimal HTTP router for API Gateway
-│       └── repositories/      # DynamoDB data access
-├── docs/                      # Architecture and agent documentation
-└── CONTEXT.md                 # Domain context and glossary
-```
-
 ## Scripts
 
-| Command | Description |
-| --- | --- |
-| `npm run build` | Build Lambda artifacts with SAM |
-| `npm start` | Start the local API Gateway emulator |
-| `npm run start:generate` | Invoke the generator Lambda locally |
-| `npm test` | Run the test suite with Vitest |
-| `npm run lint` | Type-check and lint with TypeScript + ESLint |
-| `npm run format` | Format source files with Prettier |
-| `npm run deploy` | Deploy interactively with SAM |
-| `npm run deploy:ci` | Deploy non-interactively (for CI/CD) |
-| `npm run seed:certifications` | Seed the certification catalog |
+| Command                                   | Description                                  |
+| ----------------------------------------- | -------------------------------------------- |
+| `npm run build`                           | Build Lambda artifacts with SAM              |
+| `npm start`                               | Start the local API Gateway emulator         |
+| `npm run start:generate`                  | Invoke the generator Lambda locally          |
+| `npm test`                                | Run the test suite with Vitest               |
+| `npm run lint`                            | Type-check and lint with TypeScript + ESLint |
+| `npm run format`                          | Format source files with Prettier            |
+| `npm run deploy`                          | Deploy interactively with SAM                |
+| `npm run deploy:ci`                       | Deploy non-interactively (for CI/CD)         |
+| `npm run seed:certifications`             | Seed the certification catalog               |
 | `npm run promote:admin -- <sub-or-email>` | Promote a user to admin in the `Users` table |
 
 ## API endpoints
 
 **Public (no auth)**
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/v1/health` | Health probe (unauthenticated so infra checks can reach it) |
-| `POST` | `/v1/auth/forgot-password` | Proxy Cognito `ForgotPassword`; enumeration-constant |
+| Method | Path                       | Description                                                 |
+| ------ | -------------------------- | ----------------------------------------------------------- |
+| `GET`  | `/v1/health`               | Health probe (unauthenticated so infra checks can reach it) |
+| `POST` | `/v1/auth/forgot-password` | Proxy Cognito `ForgotPassword`; enumeration-constant        |
 
 **Any authenticated user (`customer` or `admin`)**
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/v1/me` | The caller's `{ sub, email, role, createdAt }` |
-| `GET` | `/v1/certifications` | List active certifications |
-| `GET` | `/v1/certifications/{id}` | Get a certification |
-| `POST` | `/v1/exams` | Request a new exam generation (owned by the caller) |
-| `GET` | `/v1/exams` | List the caller's own exams (with filters/pagination) |
-| `GET` | `/v1/exams/{id}` | Get full exam detail (own/exam-owned) |
-| `GET` | `/v1/exams/{id}/status` | Poll generation status |
-| `GET` | `/v1/exams/{id}/download` | Presigned PDF download |
-| `DELETE` | `/v1/exams/{id}` | Delete an exam and its artifacts |
+| Method   | Path                      | Description                                           |
+| -------- | ------------------------- | ----------------------------------------------------- |
+| `GET`    | `/v1/me`                  | The caller's `{ sub, email, role, createdAt }`        |
+| `GET`    | `/v1/certifications`      | List active certifications                            |
+| `GET`    | `/v1/certifications/{id}` | Get a certification                                   |
+| `POST`   | `/v1/exams`               | Request a new exam generation (owned by the caller)   |
+| `GET`    | `/v1/exams`               | List the caller's own exams (with filters/pagination) |
+| `GET`    | `/v1/exams/{id}`          | Get full exam detail (own/exam-owned)                 |
+| `GET`    | `/v1/exams/{id}/status`   | Poll generation status                                |
+| `GET`    | `/v1/exams/{id}/download` | Presigned PDF download                                |
+| `DELETE` | `/v1/exams/{id}`          | Delete an exam and its artifacts                      |
 
 **Admin-only**
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/v1/admin/users` | Search + paginate users |
-| `PUT` | `/v1/admin/users/{id}/role` | Promote/demote a user's role |
-| `POST` | `/v1/admin/certifications` | Create a certification |
-| `PUT` | `/v1/admin/certifications/{id}` | Update certification metadata |
-| `GET` | `/v1/admin/exams` | List any user's exams |
-| `GET` | `/v1/admin/exams/{id}` | Get any user's exam detail |
-| `GET` | `/v1/admin/exams/{id}/status` | Poll any user's exam status |
-| `GET` | `/v1/admin/exams/{id}/download` | Presigned PDF download for any user |
-| `DELETE` | `/v1/admin/exams/{id}` | Delete any user's exam |
+| Method   | Path                            | Description                         |
+| -------- | ------------------------------- | ----------------------------------- |
+| `GET`    | `/v1/admin/users`               | Search + paginate users             |
+| `PUT`    | `/v1/admin/users/{id}/role`     | Promote/demote a user's role        |
+| `POST`   | `/v1/admin/certifications`      | Create a certification              |
+| `PUT`    | `/v1/admin/certifications/{id}` | Update certification metadata       |
+| `GET`    | `/v1/admin/exams`               | List any user's exams               |
+| `GET`    | `/v1/admin/exams/{id}`          | Get any user's exam detail          |
+| `GET`    | `/v1/admin/exams/{id}/status`   | Poll any user's exam status         |
+| `GET`    | `/v1/admin/exams/{id}/download` | Presigned PDF download for any user |
+| `DELETE` | `/v1/admin/exams/{id}`          | Delete any user's exam              |
 
 All endpoints except the two public ones require a Cognito ID token as a
 `Bearer` token. `admin` routes additionally require the caller's `Users` row
